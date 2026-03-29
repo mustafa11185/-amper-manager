@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Bell } from 'lucide-react'
+import AmperLogo from './AmperLogo'
 
 export default function TopBar() {
   const { data: session, status } = useSession()
@@ -36,9 +37,12 @@ export default function TopBar() {
 
   return (
     <div className="flex items-center justify-between py-2">
-      <p className="text-sm font-bold text-text-primary">
-        مرحباً {session?.user?.name?.split(' ')[0] || ''}
-      </p>
+      <div className="flex items-center gap-2">
+        <AmperLogo size={28} />
+        <p className="text-sm font-bold text-text-primary">
+          مرحباً {session?.user?.name?.split(' ')[0] || ''}
+        </p>
+      </div>
       <Link href="/notifications" className="relative p-2">
         <Bell size={22} className="text-text-secondary" />
         {unreadCount > 0 && (

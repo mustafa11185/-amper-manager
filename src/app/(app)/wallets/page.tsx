@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { openWhatsApp } from '@/lib/whatsapp'
+
+const CollectorMiniMap = dynamic(() => import('@/components/CollectorMiniMap'), { ssr: false })
 
 function Skeleton() {
   return <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-32 rounded-2xl" />)}</div>
@@ -20,6 +23,9 @@ export default function WalletsPage() {
   const [historyStaffId, setHistoryStaffId] = useState<string | null>(null)
   const [history, setHistory] = useState<any[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [mapStaffId, setMapStaffId] = useState<string | null>(null)
+  const [mapData, setMapData] = useState<{ current_location: { lat: number; lng: number } | null; stops: any[] } | null>(null)
+  const [mapLoading, setMapLoading] = useState(false)
 
   function refresh() {
     fetch('/api/wallets').then(r => r.json()).then(d => { setWallets(d.wallets || []); setLoading(false) }).catch(() => setLoading(false))
@@ -36,6 +42,18 @@ export default function WalletsPage() {
       setHistory(d.deliveries || [])
     } catch { setHistory([]) }
     setHistoryLoading(false)
+  }
+
+  async function toggleMap(staffId: string) {
+    if (mapStaffId === staffId) { setMapStaffId(null); return }
+    setMapStaffId(staffId)
+    setMapLoading(true)
+    try {
+      const res = await fetch(`/api/map/collector-stops?staff_id=${staffId}&date=today`)
+      const d = await res.json()
+      setMapData(d)
+    } catch { setMapData(null) }
+    setMapLoading(false)
   }
 
   async function handleDeliver() {
@@ -127,6 +145,39 @@ export default function WalletsPage() {
                 سجل التعاملات
               </button>
             </div>
+
+            {/* Map toggle button */}
+            <button onClick={() => toggleMap(w.staff_id)}
+              className={`w-full mt-2 h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 ${mapStaffId === w.staff_id ? 'bg-blue-primary/10 text-blue-primary' : 'bg-bg-muted text-text-muted'}`}>
+              <MapPin className="w-3.5 h-3.5" /> خريطة اليوم
+            </button>
+
+            {/* Collector map */}
+            {mapStaffId === w.staff_id && (
+              <div className="mt-3">
+                {mapLoading ? <div className="skeleton h-[220px] rounded-2xl" /> : mapData ? (
+                  <>
+                    <CollectorMiniMap
+                      currentLocation={mapData.current_location}
+                      stops={mapData.stops}
+                    />
+                    {mapData.stops.length > 0 && (
+                      <p className="text-[10px] text-text-muted mt-1.5 text-center">
+                        {mapData.stops.length} توقفات اليوم — إجمالي {mapData.stops.reduce((a: number, s: any) => a + s.duration_minutes, 0)} دقيقة
+                      </p>
+                    )}
+                    {mapData.stops.length === 0 && mapData.current_location && (
+                      <p className="text-[10px] text-success mt-1.5 text-center">لا توجد توقفات اليوم ✅</p>
+                    )}
+                    {!mapData.current_location && (
+                      <p className="text-[10px] text-text-muted mt-1.5 text-center">لا يوجد موقع — الجابي لم يسجل دخول اليوم</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[10px] text-text-muted text-center py-4">فشل تحميل الخريطة</p>
+                )}
+              </div>
+            )}
 
             {/* Transaction history */}
             {historyStaffId === w.staff_id && (

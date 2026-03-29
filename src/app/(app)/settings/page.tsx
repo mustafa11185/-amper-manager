@@ -8,6 +8,7 @@ import {
   ChevronLeft, LogOut, Shield, LayoutList, Pencil, Trash2, Plus,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Link from 'next/link'
 
 type SettingsSection =
   | 'menu' | 'generator' | 'pricing' | 'wallets' | 'branch-info' | 'payment' | 'whatsapp'
@@ -2089,10 +2090,12 @@ function StaffTrackingSection() {
       )}
 
       {tab === 'map' && (
-        <div className="bg-bg-surface rounded-2xl p-8 text-center" style={{ boxShadow: 'var(--shadow-md)' }}>
-          <MapPin size={32} className="text-text-muted mx-auto mb-2" />
-          <p className="text-xs text-text-muted">الخريطة الحية تتطلب وحدة GPS</p>
-        </div>
+        <Link href="/staff-tracking"
+          className="bg-bg-surface rounded-2xl p-6 text-center block" style={{ boxShadow: 'var(--shadow-md)' }}>
+          <MapPin size={32} className="text-blue-primary mx-auto mb-2" />
+          <p className="text-sm font-bold text-text-primary mb-1">خريطة تتبع الجباة</p>
+          <p className="text-xs text-text-muted">اضغط لفتح صفحة التتبع التفصيلية مع التوقفات والتقارير اليومية</p>
+        </Link>
       )}
 
       {tab === 'attendance' && (
