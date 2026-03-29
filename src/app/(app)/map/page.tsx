@@ -1,9 +1,10 @@
 'use client'
+export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, RefreshCw } from 'lucide-react'
-import dynamic from 'next/dynamic'
+import nextDynamic from 'next/dynamic'
 
 type Collector = {
   staff_id: string
@@ -15,7 +16,7 @@ type Collector = {
   minutes_ago: number
 }
 
-const LiveMap = dynamic(() => import('./LiveMap'), { ssr: false })
+const LiveMap = nextDynamic(() => import('./LiveMap'), { ssr: false })
 
 export default function MapPage() {
   const router = useRouter()

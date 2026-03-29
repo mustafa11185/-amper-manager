@@ -1,13 +1,14 @@
 'use client'
+export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
 import { ChevronLeft, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
-import dynamic from 'next/dynamic'
+import nextDynamic from 'next/dynamic'
 import { openWhatsApp } from '@/lib/whatsapp'
 
-const CollectorMiniMap = dynamic(() => import('@/components/CollectorMiniMap'), { ssr: false })
+const CollectorMiniMap = nextDynamic(() => import('@/components/CollectorMiniMap'), { ssr: false })
 
 function Skeleton() {
   return <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-32 rounded-2xl" />)}</div>
