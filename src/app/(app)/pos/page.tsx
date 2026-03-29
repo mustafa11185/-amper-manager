@@ -25,7 +25,7 @@ type AlleyInfo = { id: string; name: string; total: number; unpaid: number }
 
 type Step = 'search' | 'amount' | 'method' | 'success'
 
-export default function PosPage() {
+function PosPageContent() {
   const { data: session } = useSession()
   const searchParams = useSearchParams()
 
@@ -379,8 +379,8 @@ export default function PosPage() {
                 key={chip.key}
                 onClick={() => setTypeFilter(chip.key)}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${typeFilter === chip.key
-                    ? chip.key === 'gold' ? 'bg-gold text-white' : 'bg-blue-primary text-white'
-                    : 'bg-bg-surface text-text-muted border border-border'
+                  ? chip.key === 'gold' ? 'bg-gold text-white' : 'bg-blue-primary text-white'
+                  : 'bg-bg-surface text-text-muted border border-border'
                   }`}
               >
                 {chip.label}
@@ -391,8 +391,8 @@ export default function PosPage() {
             <button
               onClick={() => setUnpaidOnly(v => !v)}
               className={`mr-auto px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${unpaidOnly
-                  ? 'bg-danger text-white'
-                  : 'bg-bg-surface text-text-muted border border-border'
+                ? 'bg-danger text-white'
+                : 'bg-bg-surface text-text-muted border border-border'
                 }`}
             >
               {unpaidOnly ? '✓ ' : ''}غير المدفوعين
@@ -405,8 +405,8 @@ export default function PosPage() {
               <button
                 onClick={() => setAlleyFilter('')}
                 className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-medium transition-all ${!alleyFilter
-                    ? 'bg-violet text-white'
-                    : 'bg-bg-surface text-text-muted border border-border'
+                  ? 'bg-violet text-white'
+                  : 'bg-bg-surface text-text-muted border border-border'
                   }`}
               >
                 كل الأزقة
@@ -416,8 +416,8 @@ export default function PosPage() {
                   key={a.id}
                   onClick={() => setAlleyFilter(alleyFilter === a.id ? '' : a.id)}
                   className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-medium transition-all ${alleyFilter === a.id
-                      ? 'bg-violet text-white'
-                      : 'bg-bg-surface text-text-muted border border-border'
+                    ? 'bg-violet text-white'
+                    : 'bg-bg-surface text-text-muted border border-border'
                     }`}
                 >
                   {a.name}
@@ -517,8 +517,8 @@ export default function PosPage() {
                     onClick={() => { setPayType('invoice'); setAmount(String(monthlyDue)) }}
                     disabled={monthlyDue <= 0}
                     className={`rounded-2xl p-3 text-center transition-all disabled:opacity-30 ${payType === 'invoice'
-                        ? 'bg-blue-primary text-white ring-2 ring-blue-primary ring-offset-2'
-                        : 'bg-bg-surface border border-border'
+                      ? 'bg-blue-primary text-white ring-2 ring-blue-primary ring-offset-2'
+                      : 'bg-bg-surface border border-border'
                       }`}
                     style={{ boxShadow: payType === 'invoice' ? '0 4px 20px rgba(27,79,216,0.2)' : 'var(--shadow-sm)' }}
                   >
@@ -534,8 +534,8 @@ export default function PosPage() {
                     onClick={() => { setPayType('debt'); setAmount(String(debt)) }}
                     disabled={debt <= 0}
                     className={`rounded-2xl p-3 text-center transition-all disabled:opacity-30 ${payType === 'debt'
-                        ? 'bg-danger text-white ring-2 ring-danger ring-offset-2'
-                        : 'bg-bg-surface border border-border'
+                      ? 'bg-danger text-white ring-2 ring-danger ring-offset-2'
+                      : 'bg-bg-surface border border-border'
                       }`}
                     style={{ boxShadow: payType === 'debt' ? '0 4px 20px rgba(220,38,38,0.2)' : 'var(--shadow-sm)' }}
                   >
@@ -551,8 +551,8 @@ export default function PosPage() {
                     onClick={() => { setPayType('all'); setAmount(String(allTotal)) }}
                     disabled={allTotal <= 0}
                     className={`rounded-2xl p-3 text-center transition-all disabled:opacity-30 ${payType === 'all'
-                        ? 'bg-success text-white ring-2 ring-success ring-offset-2'
-                        : 'bg-bg-surface border border-border'
+                      ? 'bg-success text-white ring-2 ring-success ring-offset-2'
+                      : 'bg-bg-surface border border-border'
                       }`}
                     style={{ boxShadow: payType === 'all' ? '0 4px 20px rgba(5,150,105,0.2)' : 'var(--shadow-sm)' }}
                   >
@@ -802,8 +802,8 @@ function MethodButton({
     <button
       onClick={onClick}
       className={`w-full rounded-2xl p-4 flex items-center gap-3 text-right transition-all ${active
-          ? 'bg-blue-soft border-2 border-blue-primary'
-          : 'bg-bg-surface border border-border'
+        ? 'bg-blue-soft border-2 border-blue-primary'
+        : 'bg-bg-surface border border-border'
         }`}
       style={{ boxShadow: active ? '0 4px 20px rgba(27,79,216,0.12)' : 'var(--shadow-sm)' }}
     >
@@ -858,3 +858,5 @@ function SubscriberRow({ sub, onSelect }: { sub: SearchResult; onSelect: (s: Sea
     </button>
   )
 }
+
+export default function PosPage() { return <Suspense fallback={null}><PosPageContent /></Suspense> }
