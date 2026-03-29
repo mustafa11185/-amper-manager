@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   if (status === 'active') { where.is_active = true }
   else if (status === 'inactive') { where.is_active = false }
   else if (status === 'debt') { where.is_active = true; where.total_debt = { gt: 0 } }
-  else { /* 'all' — no filter */ }
+  else { where.is_active = true }
 
   if (governorate) where.governorate = governorate
   if (alley) where.alley = alley
