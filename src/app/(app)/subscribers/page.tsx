@@ -25,7 +25,6 @@ const FILTER_CHIPS = [
   { key: 'normal', label: 'عادي', type: 'type' },
   { key: 'unpaid', label: 'غير المدفوعين', type: 'status' },
   { key: 'debt', label: 'ديون', type: 'status' },
-  { key: 'inactive', label: 'غير نشط', type: 'status' },
 ]
 
 const GOVERNORATES = [

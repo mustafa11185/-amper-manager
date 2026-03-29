@@ -125,7 +125,11 @@ export async function GET(req: NextRequest) {
   ])
 
   return NextResponse.json({
-    subscribers,
+    subscribers: subscribers.map(s => ({
+      ...s,
+      amperage: Number(s.amperage),
+      total_debt: Number(s.total_debt),
+    })),
     total,
     pages: Math.ceil(total / limit),
     page,

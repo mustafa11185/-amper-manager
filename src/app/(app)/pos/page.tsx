@@ -193,9 +193,12 @@ function PosPageContent() {
     return () => clearTimeout(timer)
   }, [query, doSearch])
 
+  const [noInvoice, setNoInvoice] = useState(false)
+
   async function selectSubscriber(sub: SearchResult) {
     setSelected(sub)
     setStep('amount')
+    setNoInvoice(false)
 
     // Fetch full subscriber data with current invoice
     let invoiceDue = 0
@@ -204,7 +207,10 @@ function PosPageContent() {
       const data = await res.json()
       const s = data.subscriber
       if (s?.current_invoice && !s.current_invoice.is_fully_paid) {
-        invoiceDue = Math.max(0, Number(s.current_invoice.total_amount_due) - Number(s.current_invoice.amount_paid))
+        invoiceDue = Number(s.current_invoice.remaining ?? 0)
+      }
+      if (!s?.current_invoice) {
+        setNoInvoice(true)
       }
       // Update subscriber with fresh data
       if (s) {
@@ -504,6 +510,13 @@ function PosPageContent() {
               </span>
             </div>
           </div>
+
+          {/* No invoice warning */}
+          {noInvoice && monthlyDue === 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-3 text-center">
+              <p className="text-xs font-bold text-yellow-700">لا توجد فاتورة — قم بإصدار الفواتير أولاً</p>
+            </div>
+          )}
 
           {/* Payment type selector */}
           {(() => {

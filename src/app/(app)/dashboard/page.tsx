@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import {
   Users, Banknote, HandCoins, AlertTriangle, UserX,
   Zap, Fuel, Sun, Moon, UserCheck, Gift, ArrowUpCircle, Bell,
-  CreditCard, BarChart3, Wallet, Clock, Thermometer, Receipt,
+  CreditCard, BarChart3, Wallet, Clock, Thermometer, Receipt, MapPin,
 } from 'lucide-react'
 import Link from 'next/link'
 import CollectorBanner from '@/components/CollectorBanner'
@@ -390,6 +390,17 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Floating map button */}
+      {canSeeFinance && (
+        <Link
+          href="/map"
+          className="fixed left-4 bottom-24 z-40 w-12 h-12 rounded-full flex items-center justify-center shadow-lg"
+          style={{ background: 'linear-gradient(135deg, #1B4FD8, #7C3AED)', boxShadow: '0 4px 20px rgba(27,79,216,0.4)' }}
+        >
+          <MapPin className="w-5 h-5 text-white" />
+        </Link>
       )}
     </div>
   )

@@ -960,18 +960,20 @@ model CollectorPermission {
 }
 
 model StaffGpsLog {
-  id          String   @id @default(uuid())
-  staff_id    String
-  branch_id   String
-  tenant_id   String
-  lat         Decimal  @db.Decimal(10,8)
-  lng         Decimal  @db.Decimal(11,8)
-  accuracy_m  Float?
-  source      String   @default("auto")
-  payment_id  String?
-  recorded_at DateTime @default(now())
-  staff       Staff    @relation(fields: [staff_id], references: [id])
-  branch      Branch   @relation(fields: [branch_id], references: [id])
+  id                String   @id @default(uuid())
+  staff_id          String
+  branch_id         String
+  tenant_id         String
+  lat               Decimal  @db.Decimal(10,8)
+  lng               Decimal  @db.Decimal(11,8)
+  accuracy_m        Float?
+  source            String   @default("auto")
+  payment_id        String?
+  is_stop           Boolean  @default(false)
+  stop_duration_min Int?
+  recorded_at       DateTime @default(now())
+  staff             Staff    @relation(fields: [staff_id], references: [id])
+  branch            Branch   @relation(fields: [branch_id], references: [id])
   @@index([staff_id, recorded_at])
   @@index([branch_id, recorded_at])
   @@map("staff_gps_logs")

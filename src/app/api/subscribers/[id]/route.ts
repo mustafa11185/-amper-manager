@@ -49,12 +49,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { subscriber_id: id, billing_month: bMonth, billing_year: bYear },
     })
     if (inv) {
+      const due = Number(inv.total_amount_due)
+      const paid = Number(inv.amount_paid)
       currentInvoice = {
         id: inv.id,
         billing_month: inv.billing_month,
         billing_year: inv.billing_year,
-        total_amount_due: Number(inv.total_amount_due),
-        amount_paid: Number(inv.amount_paid),
+        total_amount_due: due,
+        amount_paid: paid,
+        remaining: Math.max(0, due - paid),
         is_fully_paid: inv.is_fully_paid,
         base_amount: Number(inv.base_amount),
         discount_amount: Number(inv.discount_amount),

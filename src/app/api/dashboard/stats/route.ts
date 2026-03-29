@@ -83,6 +83,8 @@ export async function GET(req: NextRequest) {
       goldAmperageAgg,
       normalAmperageAgg,
       ownerActingCollector,
+      onlinePaymentsAgg,
+      totalCollectedAgg,
     ] = await Promise.all([
       // 1. Total active subscribers
       prisma.subscriber.count({
@@ -240,6 +242,23 @@ export async function GET(req: NextRequest) {
         where: { tenant_id: tenantId, is_owner_acting: true, role: 'collector', is_active: true },
         select: { id: true },
       }).catch(e => { console.error('[dashboard] ownerCollector:', e); return null }),
+
+      // 17. Online payments (success) this month — for non-invoice direct payments
+      prisma.onlinePayment.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          status: 'success',
+          invoice_id: null, // Only non-invoice payments (invoice ones are already in amount_paid)
+          created_at: { gte: monthStart, lt: monthEnd },
+        },
+      }).catch(e => { console.error('[dashboard] onlinePayments:', e); return { _sum: { amount: null } } }),
+
+      // 18. Total collected from collector wallets
+      prisma.collectorWallet.aggregate({
+        _sum: { total_collected: true },
+        where: { branch_id: { in: branchIds } },
+      }).catch(e => { console.error('[dashboard] totalCollected:', e); return { _sum: { total_collected: null } } }),
     ])
 
     // Process generators for stat cards — null safe
@@ -293,9 +312,11 @@ export async function GET(req: NextRequest) {
 
     // Financial calculations — null safe
     const collected = Number(monthlyCollected?._sum?.amount_paid ?? 0)
+    const onlineNonInvoice = Number(onlinePaymentsAgg?._sum?.amount ?? 0)
     const deliveries = Number(monthlyDeliveries?._sum?.amount ?? 0)
     const totalDue = Number(monthlyRevenue?._sum?.total_amount_due ?? 0)
-    const revenue = collected
+    const revenue = collected + onlineNonInvoice // Invoice payments + direct online payments
+    const totalCollected = Number(totalCollectedAgg?._sum?.total_collected ?? 0)
 
     // Collection rate — null safe
     let collectionRate = 0
@@ -344,6 +365,7 @@ export async function GET(req: NextRequest) {
       monthly_total_due: totalDue,
       monthly_collected: collected,
       monthly_deliveries: deliveries,
+      total_collected: totalCollected,
       collection_rate: collectionRate,
       total_debt: Number(totalDebtAgg?._sum?.total_debt ?? 0),
       unpaid_count: typeof unpaidCount === 'number' ? unpaidCount : 0,
