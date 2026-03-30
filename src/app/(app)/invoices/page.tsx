@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { FileText, RotateCcw, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { formatBillingMonth } from '@/lib/billing-months'
 
 type Invoice = {
   id: string
@@ -88,7 +89,7 @@ export default function InvoicesPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold truncate">{inv.subscriber?.name}</p>
                 <p className="text-xs text-text-muted">
-                  الشهر المحصّل: <span className="font-num font-bold">{inv.billing_month}</span> · {inv.billing_year}
+                  الشهر المحصّل: <span className="font-num font-bold">{formatBillingMonth(inv.billing_month, inv.billing_year)}</span>
                   {' · #'}{inv.subscriber?.serial_number}
                 </p>
               </div>

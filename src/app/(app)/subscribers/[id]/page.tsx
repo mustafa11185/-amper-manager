@@ -8,6 +8,7 @@ import {
   MapPin, Phone as PhoneIcon, Tag, Link2, Pencil, X, Loader2,
   Copy, RefreshCw, MessageCircle, Trash2, AlertCircle,
 } from 'lucide-react'
+import { formatBillingMonth } from '@/lib/billing-months'
 import toast from 'react-hot-toast'
 import { openWhatsApp } from '@/lib/whatsapp'
 
@@ -215,7 +216,7 @@ export default function SubscriberDetailPage() {
               </p>
               {currentInv && (
                 <p className="text-[9px] text-text-muted mt-0.5">
-                  شهر <span className="font-num">{currentInv.billing_month}</span>
+                  {formatBillingMonth(currentInv.billing_month, currentInv.billing_year)}
                 </p>
               )}
             </div>
@@ -629,9 +630,8 @@ function InvoicesSection({ invoices, isOwner, subscriberId, onRefresh }: {
               <div key={inv.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <div>
                   <p className="text-xs font-medium">
-                    الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{inv.billing_month}</span>
+                    الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{formatBillingMonth(inv.billing_month, inv.billing_year)}</span>
                   </p>
-                  <p className="text-[10px] text-text-muted">{inv.billing_year}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="text-left">
@@ -666,7 +666,7 @@ function InvoicesSection({ invoices, isOwner, subscriberId, onRefresh }: {
           <div className="fixed bottom-0 left-0 right-0 mx-auto max-w-[390px] bg-bg-surface rounded-t-[20px] flex flex-col" style={{ maxHeight: '90vh' }}>
             {/* Header */}
             <div className="flex items-center justify-between p-4 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-              <h3 className="text-sm font-bold">إلغاء دفع فاتورة شهر {reverseInv.month}</h3>
+              <h3 className="text-sm font-bold">إلغاء دفع فاتورة {formatBillingMonth(reverseInv.month, reverseInv.year)}</h3>
               <button onClick={() => { setReverseInv(null); setReverseReason('') }}
                 className="w-8 h-8 rounded-lg bg-bg-muted flex items-center justify-center text-text-muted">
                 <X size={16} />

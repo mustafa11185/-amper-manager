@@ -185,7 +185,8 @@ function GeneratorSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SECTION B: Monthly Pricing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const AR_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+import { MONTHS as BILLING_MONTHS, formatBillingMonth, monthName } from '@/lib/billing-months'
+const AR_MONTHS = BILLING_MONTHS.map(m => m.local)
 
 function PricingSection() {
   const [pricingData, setPricingData] = useState<any[]>([])
@@ -415,7 +416,7 @@ function PricingSection() {
           <p className="text-[10px] text-text-muted">الشهر المستحق</p>
           <p className="text-sm font-bold font-num">
             {billingMonth > 0 && billingYear > 0
-              ? `${AR_MONTHS[billingMonth - 1]} ${billingYear}`
+              ? formatBillingMonth(billingMonth, billingYear)
               : <span className="text-text-muted">غير محدد</span>}
           </p>
         </div>
@@ -443,7 +444,7 @@ function PricingSection() {
         {generating ? 'جاري الإصدار...' : '📄 إصدار الفواتير'}
       </button>
       <p className="text-[10px] text-text-muted text-center -mt-1">
-        سيحول المشتركين غير المدفوعين إلى ديون وينشئ فواتير جديدة لشهر {billingMonth > 0 ? AR_MONTHS[billingMonth - 1] : '...'}
+        سيحول المشتركين غير المدفوعين إلى ديون وينشئ فواتير جديدة لشهر {billingMonth > 0 ? monthName(billingMonth) : '...'}
       </p>
 
       {/* Pre-check error */}
@@ -481,57 +482,66 @@ function PricingSection() {
 
       {/* ── Edit Modal (Bottom Sheet) ── */}
       {showEditModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center"
+        <div className="fixed inset-0 z-50 bg-black/50"
           onClick={e => { if (e.target === e.currentTarget) setShowEditModal(false) }}>
-          <div className="bg-bg-surface w-full max-w-[420px] rounded-t-2xl p-5 pb-10 space-y-4">
-            <h3 className="text-sm font-bold text-center">تعديل السعر والشهر</h3>
+          <div className="fixed bottom-0 left-0 right-0 mx-auto max-w-[420px] bg-bg-surface rounded-t-[20px] flex flex-col" style={{ maxHeight: '85vh' }}>
+            {/* Header */}
+            <div className="shrink-0 p-4 text-center" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h3 className="text-sm font-bold">تعديل السعر والشهر</h3>
+            </div>
 
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="text-[10px] text-text-muted block mb-1">الشهر</label>
-                <select value={editMonth} onChange={e => setEditMonth(parseInt(e.target.value))}
-                  className="w-full h-10 px-2 rounded-xl border border-border bg-bg-base text-sm font-bold">
-                  {AR_MONTHS.map((name, i) => (
-                    <option key={i + 1} value={i + 1}>{name}</option>
-                  ))}
-                </select>
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-[10px] text-text-muted block mb-1">الشهر</label>
+                  <select value={editMonth} onChange={e => setEditMonth(parseInt(e.target.value))}
+                    className="w-full h-10 px-2 rounded-xl border border-border bg-bg-base text-sm font-bold">
+                    {AR_MONTHS.map((name, i) => (
+                      <option key={i + 1} value={i + 1}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-text-muted block mb-1">السنة</label>
+                  <input type="number" value={editYear || ''} onChange={e => setEditYear(parseInt(e.target.value) || 0)}
+                    dir="ltr" className="w-full h-10 px-3 rounded-xl border border-border bg-bg-base font-num text-sm font-bold text-center" />
+                </div>
               </div>
-              <div className="flex-1">
-                <label className="text-[10px] text-text-muted block mb-1">السنة</label>
-                <input type="number" value={editYear || ''} onChange={e => setEditYear(parseInt(e.target.value) || 0)}
-                  dir="ltr" className="w-full h-10 px-3 rounded-xl border border-border bg-bg-base font-num text-sm font-bold text-center" />
+
+              <div>
+                <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير العادي</label>
+                <div className="relative">
+                  <input type="number" value={editNormal} onChange={e => setEditNormal(e.target.value)}
+                    placeholder="0" dir="ltr"
+                    className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-blue-primary focus:outline-none focus:border-blue-primary" />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير الذهبي</label>
+                <div className="relative">
+                  <input type="number" value={editGold} onChange={e => setEditGold(e.target.value)}
+                    placeholder="0" dir="ltr"
+                    className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-gold focus:outline-none focus:border-gold" />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
+                </div>
               </div>
             </div>
 
-            <div>
-              <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير العادي</label>
-              <div className="relative">
-                <input type="number" value={editNormal} onChange={e => setEditNormal(e.target.value)}
-                  placeholder="0" dir="ltr"
-                  className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-blue-primary focus:outline-none focus:border-blue-primary" />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
+            {/* Footer — always visible above bottom nav */}
+            <div className="shrink-0 p-4" style={{ paddingBottom: 56, borderTop: '1px solid var(--border)' }}>
+              <div className="flex gap-2">
+                <button onClick={() => setShowEditModal(false)}
+                  className="flex-1 h-11 rounded-xl bg-bg-muted text-text-secondary text-sm font-bold">
+                  إلغاء
+                </button>
+                <button onClick={handleSaveEdit} disabled={saving}
+                  className="flex-1 h-11 rounded-xl bg-blue-primary text-white text-sm font-bold disabled:opacity-50">
+                  {saving ? 'جاري...' : '✅ تأكيد التعديل'}
+                </button>
               </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير الذهبي</label>
-              <div className="relative">
-                <input type="number" value={editGold} onChange={e => setEditGold(e.target.value)}
-                  placeholder="0" dir="ltr"
-                  className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-gold focus:outline-none focus:border-gold" />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button onClick={() => setShowEditModal(false)}
-                className="flex-1 h-11 rounded-xl bg-bg-muted text-text-secondary text-sm font-bold">
-                إلغاء
-              </button>
-              <button onClick={handleSaveEdit} disabled={saving}
-                className="flex-1 h-11 rounded-xl bg-blue-primary text-white text-sm font-bold disabled:opacity-50">
-                {saving ? 'جاري...' : '✅ تأكيد التعديل'}
-              </button>
             </div>
           </div>
         </div>
@@ -545,7 +555,7 @@ function PricingSection() {
             <div className="bg-bg-muted rounded-xl p-3 space-y-2">
               <div className="flex justify-between text-xs">
                 <span className="text-text-muted">الشهر</span>
-                <span className="font-bold font-num">{AR_MONTHS[(preCheckData.billing_month || 1) - 1]} {preCheckData.billing_year}</span>
+                <span className="font-bold font-num">{formatBillingMonth(preCheckData.billing_month || 1, preCheckData.billing_year)}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-text-muted">المشتركون النشطون</span>
@@ -561,7 +571,7 @@ function PricingSection() {
               </div>
             </div>
             <p className="text-[10px] text-danger text-center font-bold">
-              لا يمكن التراجع إلا خلال 24 ساعة
+              يمكن التراجع عن الإصدار لاحقاً
             </p>
             <div className="flex gap-2">
               <button onClick={() => setShowGenerateConfirm(false)}
@@ -586,7 +596,7 @@ function PricingSection() {
               سيتم حذف الفواتير المُصدرة في آخر عملية وإعادة الديون للحالة السابقة
             </p>
             <p className="text-[10px] text-danger text-center font-bold">
-              لا يمكن التراجع بعد 24 ساعة من الإصدار
+              سيتم حذف الفواتير واستعادة الديون — هل أنت متأكد؟
             </p>
             <div className="flex gap-2">
               <button onClick={() => setShowReverseConfirm(false)}

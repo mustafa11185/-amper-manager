@@ -30,12 +30,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'لا يوجد إصدار سابق للتراجع عنه' }, { status: 404 })
     }
 
-    // Check if older than 24 hours
-    const hoursSince = (Date.now() - new Date(lastLog.generated_at).getTime()) / (1000 * 60 * 60)
-    if (hoursSince > 24) {
-      return NextResponse.json({ error: 'لا يمكن التراجع بعد 24 ساعة' }, { status: 400 })
-    }
-
     await prisma.$transaction(async (tx) => {
       // Find invoices created in this generation batch
       // Match by branch, billing period, and created_at close to generated_at

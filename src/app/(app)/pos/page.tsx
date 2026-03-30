@@ -8,6 +8,7 @@ import {
   Search, Banknote, Smartphone, CreditCard, CheckCircle2,
   Printer, MessageCircle, ChevronRight, Gift, Loader2, WifiOff,
 } from 'lucide-react'
+import { formatBillingMonth } from '@/lib/billing-months'
 import toast from 'react-hot-toast'
 import { queuePayment, getPendingPayments, syncOfflinePayments } from '@/lib/offline-queue'
 
@@ -611,7 +612,7 @@ function PosPageContent() {
                 </p>
                 {activeBillingMonth && payType === 'invoice' && (
                   <p className="text-[10px] text-text-muted mt-1">
-                    الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{activeBillingMonth}</span>
+                    الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{activeBillingMonth && activeBillingYear ? formatBillingMonth(activeBillingMonth, activeBillingYear) : activeBillingMonth}</span>
                   </p>
                 )}
               </div>
@@ -726,9 +727,9 @@ function PosPageContent() {
               {Number(amount).toLocaleString()}
               <span className="text-sm mr-1">د.ع</span>
             </p>
-            {activeBillingMonth && (
+            {activeBillingMonth && activeBillingYear && (
               <p className="text-xs text-text-muted mt-2">
-                الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{activeBillingMonth}</span>
+                الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{formatBillingMonth(activeBillingMonth, activeBillingYear)}</span>
               </p>
             )}
           </div>
@@ -779,7 +780,7 @@ function PosPageContent() {
             )}
             {payResult.billing_month && (
               <p className="text-xs text-text-muted mt-1">
-                الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{payResult.billing_month}</span>
+                الشهر المحصّل: <span className="font-num font-bold text-blue-primary">{formatBillingMonth(payResult.billing_month, payResult.billing_year || activeBillingYear || new Date().getFullYear())}</span>
               </p>
             )}
           </div>

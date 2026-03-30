@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-const MONTHS = ['', 'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+import { MONTHS as BILLING_MONTHS, monthName } from '@/lib/billing-months'
+const MONTHS = ['', ...BILLING_MONTHS.map(m => m.local)]
 const fmt = (n: number) => Number(n).toLocaleString('en')
 
 type ReportData = {
