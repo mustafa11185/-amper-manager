@@ -17,13 +17,20 @@ export async function POST(req: NextRequest) {
     if (!branch_id) return NextResponse.json({ error: 'branch_id مطلوب' }, { status: 400 })
     if (!price_per_amp_normal || Number(price_per_amp_normal) <= 0) return NextResponse.json({ error: 'سعر الأمبير العادي مطلوب' }, { status: 400 })
     if (!price_per_amp_gold || Number(price_per_amp_gold) <= 0) return NextResponse.json({ error: 'سعر الأمبير الذهبي مطلوب' }, { status: 400 })
+    if (!billing_month || !billing_year) return NextResponse.json({ error: 'الشهر والسنة مطلوبان' }, { status: 400 })
 
     const priceN = Number(price_per_amp_normal)
     const priceG = Number(price_per_amp_gold)
-    const bMonth = billing_month ? Number(billing_month) : new Date().getMonth() + 1
-    const bYear = billing_year ? Number(billing_year) : new Date().getFullYear()
+    const bMonth = Number(billing_month)
+    const bYear = Number(billing_year)
 
-    // Find existing pricing for this branch to update, or create new
+    // Verify branch belongs to tenant
+    const branch = await prisma.branch.findFirst({
+      where: { id: branch_id, tenant_id: user.tenantId as string },
+    })
+    if (!branch) return NextResponse.json({ error: 'الفرع غير موجود' }, { status: 404 })
+
+    // Update or create pricing record
     const existing = await prisma.monthlyPricing.findFirst({
       where: { branch_id },
       orderBy: { effective_from: 'desc' },
@@ -51,9 +58,14 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Update all UNPAID invoices for this branch
+    // Update ONLY unpaid invoices for this specific billing month/year
     const unpaidInvoices = await prisma.invoice.findMany({
-      where: { branch_id, is_fully_paid: false },
+      where: {
+        branch_id,
+        is_fully_paid: false,
+        billing_month: bMonth,
+        billing_year: bYear,
+      },
       include: { subscriber: { select: { amperage: true, subscription_type: true } } },
     })
 
@@ -64,15 +76,11 @@ export async function POST(req: NextRequest) {
       const pricePerAmp = sub.subscription_type === 'gold' ? priceG : priceN
       const newAmount = Math.round(Number(sub.amperage) * pricePerAmp)
 
-      try {
-        await prisma.invoice.update({
-          where: { id: inv.id },
-          data: { total_amount_due: newAmount, base_amount: newAmount },
-        })
-        updated++
-      } catch (e) {
-        console.error(`Failed to update invoice ${inv.id}:`, e)
-      }
+      await prisma.invoice.update({
+        where: { id: inv.id },
+        data: { total_amount_due: newAmount, base_amount: newAmount },
+      })
+      updated++
     }
 
     return NextResponse.json({ ok: true, invoices_updated: updated, billing_month: bMonth, billing_year: bYear })

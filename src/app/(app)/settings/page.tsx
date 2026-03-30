@@ -190,42 +190,36 @@ const AR_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو
 function PricingSection() {
   const [pricingData, setPricingData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [generating, setGenerating] = useState(false)
   const [selectedBranch, setSelectedBranch] = useState('')
-  const [priceNormal, setPriceNormal] = useState('')
-  const [priceGold, setPriceGold] = useState('')
-  const [billingMonth, setBillingMonth] = useState<number>(0)
-  const [billingYear, setBillingYear] = useState<number>(0)
-  const [savedNormal, setSavedNormal] = useState('')
-  const [savedGold, setSavedGold] = useState('')
-  const [autoInvoiceDay, setAutoInvoiceDay] = useState(1)
-  const [savingDay, setSavingDay] = useState(false)
-  const [lastPricingDate, setLastPricingDate] = useState<string | null>(null)
-  const [subscriberCount, setSubscriberCount] = useState<number | null>(null)
-  const [showConfirm, setShowConfirm] = useState(false)
+  const [priceNormal, setPriceNormal] = useState(0)
+  const [priceGold, setPriceGold] = useState(0)
+  const [billingMonth, setBillingMonth] = useState(0)
+  const [billingYear, setBillingYear] = useState(0)
   const [fetchError, setFetchError] = useState(false)
   const [noPricing, setNoPricing] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
 
-  // Load cached values immediately, then fetch from DB
-  useEffect(() => {
-    // Show cached values instantly
-    try {
-      const cached = localStorage.getItem('last_pricing')
-      if (cached) {
-        const c = JSON.parse(cached)
-        if (c.normal) { setPriceNormal(c.normal); setSavedNormal(c.normal) }
-        if (c.gold) { setPriceGold(c.gold); setSavedGold(c.gold) }
-        if (c.month) setBillingMonth(c.month)
-        if (c.year) setBillingYear(c.year)
-      }
-    } catch {}
-    fetchPricing()
-  }, [])
+  // Edit modal
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editNormal, setEditNormal] = useState('')
+  const [editGold, setEditGold] = useState('')
+  const [editMonth, setEditMonth] = useState(0)
+  const [editYear, setEditYear] = useState(0)
+  const [saving, setSaving] = useState(false)
+
+  // Generate
+  const [generating, setGenerating] = useState(false)
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
+  const [preCheckData, setPreCheckData] = useState<any>(null)
+  const [preCheckError, setPreCheckError] = useState('')
+  const [highlightEdit, setHighlightEdit] = useState(false)
+
+  // Reverse
+  const [reversing, setReversing] = useState(false)
+  const [showReverseConfirm, setShowReverseConfirm] = useState(false)
+
+  useEffect(() => { fetchPricing() }, [])
 
   function fetchPricing() {
-    setRefreshing(true)
     setFetchError(false)
     fetch('/api/settings/pricing')
       .then(r => r.json())
@@ -241,44 +235,24 @@ function PricingSection() {
           setNoPricing(true)
         }
         setLoading(false)
-        setRefreshing(false)
       })
-      .catch(() => {
-        setFetchError(true)
-        setLoading(false)
-        setRefreshing(false)
-      })
+      .catch(() => { setFetchError(true); setLoading(false) })
   }
 
   function loadBranchPricing(record: any) {
     const p = record.pricing
     if (p) {
-      setPriceNormal(String(p.price_per_amp_normal ?? ''))
-      setPriceGold(String(p.price_per_amp_gold ?? ''))
-      setSavedNormal(String(p.price_per_amp_normal ?? ''))
-      setSavedGold(String(p.price_per_amp_gold ?? ''))
-      if ((p as any).auto_invoice_day) setAutoInvoiceDay((p as any).auto_invoice_day)
+      setPriceNormal(Number(p.price_per_amp_normal ?? 0))
+      setPriceGold(Number(p.price_per_amp_gold ?? 0))
       if (p.effective_from) {
         const eff = new Date(p.effective_from)
         setBillingMonth(eff.getMonth() + 1)
         setBillingYear(eff.getFullYear())
       }
-      setLastPricingDate(p.created_at || p.effective_from || null)
       setNoPricing(false)
-      // Cache to localStorage
-      try {
-        localStorage.setItem('last_pricing', JSON.stringify({
-          normal: String(p.price_per_amp_normal ?? ''),
-          gold: String(p.price_per_amp_gold ?? ''),
-          month: new Date(p.effective_from).getMonth() + 1,
-          year: new Date(p.effective_from).getFullYear(),
-        }))
-      } catch {}
     } else {
-      setPriceNormal(''); setPriceGold('')
-      setSavedNormal(''); setSavedGold('')
+      setPriceNormal(0); setPriceGold(0)
       setBillingMonth(0); setBillingYear(0)
-      setLastPricingDate(null)
       setNoPricing(true)
     }
   }
@@ -289,11 +263,21 @@ function PricingSection() {
     if (record) loadBranchPricing(record)
   }
 
-  async function handleSave() {
-    if (!selectedBranch) return
-    if (!priceNormal || Number(priceNormal) <= 0 || !priceGold || Number(priceGold) <= 0) {
-      toast.error('السعر يجب أن يكون أكبر من صفر')
-      return
+  function openEditModal() {
+    setEditNormal(priceNormal > 0 ? String(priceNormal) : '')
+    setEditGold(priceGold > 0 ? String(priceGold) : '')
+    setEditMonth(billingMonth || new Date().getMonth() + 1)
+    setEditYear(billingYear || new Date().getFullYear())
+    setShowEditModal(true)
+    setHighlightEdit(false)
+  }
+
+  async function handleSaveEdit() {
+    if (!editNormal || Number(editNormal) <= 0 || !editGold || Number(editGold) <= 0) {
+      toast.error('السعر يجب أن يكون أكبر من صفر'); return
+    }
+    if (!editMonth || !editYear) {
+      toast.error('يجب تحديد الشهر والسنة'); return
     }
     setSaving(true)
     try {
@@ -302,24 +286,16 @@ function PricingSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           branch_id: selectedBranch,
-          price_per_amp_normal: Number(priceNormal),
-          price_per_amp_gold: Number(priceGold),
-          billing_month: billingMonth || undefined,
-          billing_year: billingYear || undefined,
+          price_per_amp_normal: Number(editNormal),
+          price_per_amp_gold: Number(editGold),
+          billing_month: editMonth,
+          billing_year: editYear,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'فشل تحديث الأسعار')
-      toast.success(`تم تحديث ${data.invoices_updated ?? 0} فاتورة غير مدفوعة بالسعر الجديد`)
-      setSavedNormal(priceNormal)
-      setSavedGold(priceGold)
-      // Update localStorage cache immediately
-      try {
-        localStorage.setItem('last_pricing', JSON.stringify({
-          normal: priceNormal, gold: priceGold,
-          month: billingMonth, year: billingYear,
-        }))
-      } catch {}
+      toast.success('تم تحديث السعر والشهر')
+      setShowEditModal(false)
       fetchPricing()
     } catch (err: any) {
       toast.error(err.message || 'فشل تحديث الأسعار')
@@ -328,39 +304,53 @@ function PricingSection() {
     }
   }
 
-  async function handleSaveAutoInvoiceDay() {
-    if (!selectedBranch) { toast.error('اختر الفرع أولاً'); return }
-    setSavingDay(true)
+  async function handlePreCheck() {
+    setPreCheckError('')
+    setPreCheckData(null)
     try {
-      const res = await fetch('/api/settings/pricing/invoice-day', {
-        method: 'PUT',
+      const res = await fetch('/api/invoices/pre-check', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branch_id: selectedBranch, auto_invoice_day: autoInvoiceDay }),
+        body: JSON.stringify({ branch_id: selectedBranch }),
       })
       const data = await res.json()
-      if (res.ok) toast.success(`✅ تم الحفظ — الفواتير ستُصدر يوم ${data.auto_invoice_day ?? autoInvoiceDay} من كل شهر`)
-      else toast.error(data.error || 'فشل الحفظ')
-    } catch (err: any) { toast.error(err.message || 'خطأ في الاتصال') }
-    setSavingDay(false)
+      if (data.check_failed === 'no_pricing') {
+        setPreCheckError('يجب تحديد سعر الأمبير أولاً')
+        setHighlightEdit(true)
+        return
+      }
+      if (data.check_failed === 'no_month') {
+        setPreCheckError('يجب تحديد الشهر المستحق أولاً')
+        setHighlightEdit(true)
+        return
+      }
+      if (data.check_failed === 'already_today') {
+        setPreCheckError(data.error)
+        return
+      }
+      if (!data.ok) {
+        setPreCheckError(data.error || 'خطأ غير متوقع')
+        return
+      }
+      setPreCheckData(data)
+      setShowGenerateConfirm(true)
+    } catch {
+      setPreCheckError('خطأ في الاتصال')
+    }
   }
 
   async function handleGenerate() {
-    // Fetch subscriber count first
-    setShowConfirm(false)
+    setShowGenerateConfirm(false)
     setGenerating(true)
     try {
-      const res = await fetch('/api/invoices/generate-new-only', {
+      const res = await fetch('/api/invoices/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ branch_id: selectedBranch }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      if (data.invoices_created > 0) {
-        toast.success(`تم إصدار ${data.invoices_created} فاتورة جديدة`)
-      } else {
-        toast.success('جميع المشتركين لديهم فواتير بالفعل')
-      }
+      toast.success(`تم إصدار ${data.generated} فاتورة — ${data.debts_added} تحولوا لديون`)
     } catch (err: any) {
       toast.error(err.message || 'خطأ في إصدار الفواتير')
     } finally {
@@ -368,43 +358,41 @@ function PricingSection() {
     }
   }
 
-  async function prepareGenerate() {
-    // Get count for confirmation
+  async function handleReverse() {
+    setShowReverseConfirm(false)
+    setReversing(true)
     try {
-      const res = await fetch(`/api/subscribers?limit=1&status=active`)
-      const d = await res.json()
-      setSubscriberCount(d.total || 0)
-      setShowConfirm(true)
-    } catch {
-      setShowConfirm(true)
-      setSubscriberCount(null)
+      const res = await fetch('/api/invoices/reverse-last-generation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch_id: selectedBranch }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(data.message || 'تم التراجع بنجاح')
+      fetchPricing()
+    } catch (err: any) {
+      toast.error(err.message || 'خطأ في التراجع')
+    } finally {
+      setReversing(false)
     }
   }
 
-  if (loading && !priceNormal && !priceGold) return <Skeleton />
+  if (loading) return <Skeleton />
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold">التسعير الشهري</h2>
-        <button onClick={fetchPricing} disabled={refreshing}
-          className="text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 disabled:opacity-50"
-          style={{ background: 'var(--blue-soft)', color: 'var(--blue-primary)' }}>
-          {refreshing ? '...' : '🔄'} تحديث
-        </button>
-      </div>
+      <h2 className="text-base font-bold">التسعير الشهري</h2>
 
-      {/* Fetch error warning */}
       {fetchError && (
         <div className="rounded-xl p-3 text-xs font-bold text-center" style={{ background: 'rgba(217,119,6,0.1)', color: 'var(--gold)' }}>
-          ⚠️ تعذر الاتصال — يعرض آخر قيمة محفوظة
+          تعذر الاتصال بالخادم
         </div>
       )}
 
-      {/* No pricing message */}
       {noPricing && !fetchError && (
         <div className="rounded-xl p-3 text-xs text-center" style={{ background: 'var(--blue-soft)', color: 'var(--blue-primary)' }}>
-          لم يتم تحديد سعر الأمبير بعد — أدخل السعر أدناه
+          لم يتم تحديد سعر الأمبير بعد — اضغط تعديل السعر والشهر
         </div>
       )}
 
@@ -412,11 +400,8 @@ function PricingSection() {
       {pricingData.length > 1 && (
         <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
           <label className="text-xs text-text-muted block mb-1">الفرع</label>
-          <select
-            value={selectedBranch}
-            onChange={e => handleBranchChange(e.target.value)}
-            className="w-full h-10 px-3 rounded-xl border border-border bg-bg-base text-sm"
-          >
+          <select value={selectedBranch} onChange={e => handleBranchChange(e.target.value)}
+            className="w-full h-10 px-3 rounded-xl border border-border bg-bg-base text-sm">
             {pricingData.map((r: any) => (
               <option key={r.branch.id} value={r.branch.id}>{r.branch.name}</option>
             ))}
@@ -424,165 +409,194 @@ function PricingSection() {
         </div>
       )}
 
-      {/* Billing period */}
+      {/* Read-only pricing display */}
       <div className="bg-bg-surface rounded-2xl p-4 space-y-3" style={{ boxShadow: 'var(--shadow-md)' }}>
-        <p className="text-xs font-bold text-text-secondary">الشهر المستحق</p>
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label className="text-[10px] text-text-muted block mb-1">السنة</label>
-            <input
-              type="number"
-              value={billingYear || ''}
-              placeholder={String(new Date().getFullYear())}
-              onChange={e => setBillingYear(parseInt(e.target.value) || 0)}
-              dir="ltr"
-              className="w-full h-10 px-3 rounded-xl border border-border bg-bg-base font-num text-sm font-bold text-center focus:outline-none focus:border-blue-primary"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] text-text-muted block mb-1">الشهر</label>
-            <select
-              value={billingMonth}
-              onChange={e => setBillingMonth(parseInt(e.target.value))}
-              className="w-full h-10 px-2 rounded-xl border border-border bg-bg-base text-sm font-bold focus:outline-none focus:border-blue-primary"
-            >
-              {billingMonth === 0 && <option value={0}>اختر الشهر</option>}
-              {AR_MONTHS.map((name, i) => (
-                <option key={i + 1} value={i + 1}>{i + 1} — {name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {billingMonth > 0 && billingYear > 0 && (
-        <div className="bg-blue-soft/50 rounded-xl p-2.5 text-center">
-          <p className="text-xs text-blue-primary font-bold">
-            شهر <span className="font-num">{billingMonth}</span> — {AR_MONTHS[billingMonth - 1] ?? ''} <span className="font-num">{billingYear}</span>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-text-muted">الشهر المستحق</p>
+          <p className="text-sm font-bold font-num">
+            {billingMonth > 0 && billingYear > 0
+              ? `${AR_MONTHS[billingMonth - 1]} ${billingYear}`
+              : <span className="text-text-muted">غير محدد</span>}
           </p>
         </div>
-        )}
-      </div>
-
-      {/* Price inputs */}
-      <div className="bg-bg-surface rounded-2xl p-4 space-y-4" style={{ boxShadow: 'var(--shadow-md)' }}>
-        <p className="text-xs font-bold text-text-secondary">سعر الأمبير الواحد شهرياً</p>
-
-        <div>
-          <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير العادي</label>
-          <div className="relative">
-            <input
-              type="number"
-              value={priceNormal}
-              onChange={e => setPriceNormal(e.target.value)}
-              placeholder={savedNormal || '0'}
-              dir="ltr"
-              className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-blue-primary focus:outline-none focus:border-blue-primary"
-            />
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير الذهبي</label>
-          <div className="relative">
-            <input
-              type="number"
-              value={priceGold}
-              onChange={e => setPriceGold(e.target.value)}
-              placeholder={savedGold || '0'}
-              dir="ltr"
-              className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-gold focus:outline-none focus:border-gold"
-            />
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
-          </div>
-        </div>
-
-        <button
-          onClick={handleSave}
-          disabled={saving || !priceNormal || !priceGold || Number(priceNormal) <= 0 || Number(priceGold) <= 0}
-          className="w-full h-11 rounded-xl bg-blue-primary text-white text-sm font-bold disabled:opacity-50"
-        >
-          {saving ? 'جاري التحديث...' : 'تعديل سعر الأمبير'}
-        </button>
-        {lastPricingDate && (
-          <p className="text-[10px] text-text-muted text-center mt-2">
-            آخر تسعير: {new Date(lastPricingDate).toLocaleDateString('ar-IQ')}
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-text-muted">سعر العادي</p>
+          <p className="text-sm font-bold font-num text-blue-primary">
+            {priceNormal > 0 ? `${priceNormal.toLocaleString('en')} د.ع` : <span className="text-text-muted">—</span>}
           </p>
-        )}
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-text-muted">سعر الذهبي</p>
+          <p className="text-sm font-bold font-num text-gold">
+            {priceGold > 0 ? `${priceGold.toLocaleString('en')} د.ع` : <span className="text-text-muted">—</span>}
+          </p>
+        </div>
       </div>
 
-      {/* Auto-invoice settings */}
-      <div style={{ background: 'var(--bg-surface)', borderRadius: '16px', padding: '16px', marginBottom: '12px', boxShadow: 'var(--shadow-md)' }}>
-        <p style={{ fontWeight: '700', marginBottom: '12px', textAlign: 'right' }}>إعدادات الإصدار التلقائي</p>
-        <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', textAlign: 'right', marginBottom: '6px' }}>
-          يوم الإصدار التلقائي (1-28)
-        </label>
-        <input
-          type="number"
-          min={1}
-          max={31}
-          value={autoInvoiceDay}
-          onChange={(e) => setAutoInvoiceDay(Math.min(31, Math.max(1, Number(e.target.value) || 1)))}
-          dir="ltr"
-          style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center', fontSize: '18px', fontWeight: '600', marginBottom: '12px', display: 'block', background: 'var(--bg-base)', color: 'var(--text-primary)' }}
-        />
-        <button
-          onClick={handleSaveAutoInvoiceDay}
-          disabled={savingDay}
-          style={{ width: '100%', padding: '14px', background: '#1B4FD8', color: 'white', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: '700', cursor: 'pointer', display: 'block', opacity: savingDay ? 0.5 : 1 }}
-        >
-          {savingDay ? 'جاري الحفظ...' : '💾 حفظ يوم الإصدار'}
-        </button>
-      </div>
+      {/* Generate invoices button */}
+      <button
+        onClick={handlePreCheck}
+        disabled={generating}
+        className="w-full h-12 rounded-xl text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+        style={{ background: 'var(--blue-primary)' }}
+      >
+        {generating ? 'جاري الإصدار...' : '📄 إصدار الفواتير'}
+      </button>
+      <p className="text-[10px] text-text-muted text-center -mt-1">
+        سيحول المشتركين غير المدفوعين إلى ديون وينشئ فواتير جديدة لشهر {billingMonth > 0 ? AR_MONTHS[billingMonth - 1] : '...'}
+      </p>
 
-      {/* Manual invoice generation */}
-      <div className="bg-bg-surface rounded-2xl p-4 space-y-3" style={{ boxShadow: 'var(--shadow-md)' }}>
-        <p className="text-xs font-bold text-text-secondary">إصدار يدوي</p>
-        <p className="text-[11px] text-text-muted">
-          إصدار فواتير لجميع المشتركين النشطين عن شهر{' '}
-          <span className="font-num font-bold text-text-primary">{billingMonth}</span> — {AR_MONTHS[billingMonth - 1] ?? ''}{' '}
-          <span className="font-num font-bold text-text-primary">{billingYear}</span>
-        </p>
-        <button
-          onClick={prepareGenerate}
-          disabled={generating || !savedNormal || !savedGold}
-          className="w-full h-11 rounded-xl text-white text-sm font-bold disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg, #1B4FD8, #7C3AED)' }}
-        >
-          {generating ? 'جاري الإصدار...' : 'إصدار فواتير للمشتركين الجدد'}
-        </button>
-        {!savedNormal && (
-          <p className="text-[10px] text-danger text-center">احفظ التسعير أولاً قبل إصدار الفواتير</p>
-        )}
-      </div>
+      {/* Pre-check error */}
+      {preCheckError && (
+        <div className="rounded-xl p-3 text-xs font-bold text-center" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }}>
+          {preCheckError}
+        </div>
+      )}
 
-      {/* Confirmation modal */}
-      {showConfirm && (
+      <div className="h-px" style={{ background: 'var(--border)' }} />
+
+      {/* Edit price & month button */}
+      <button
+        onClick={openEditModal}
+        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all"
+        style={{
+          background: highlightEdit ? 'rgba(239,68,68,0.1)' : 'var(--bg-surface)',
+          color: highlightEdit ? 'var(--danger)' : 'var(--text-secondary)',
+          border: highlightEdit ? '2px solid var(--danger)' : '1px solid var(--border)',
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
+        💾 تعديل السعر والشهر
+      </button>
+
+      {/* Reverse last generation */}
+      <button
+        onClick={() => setShowReverseConfirm(true)}
+        disabled={reversing}
+        className="w-full h-10 rounded-xl text-xs font-bold disabled:opacity-50"
+        style={{ color: 'var(--text-muted)', background: 'transparent' }}
+      >
+        {reversing ? 'جاري التراجع...' : '↩️ تراجع عن آخر إصدار'}
+      </button>
+
+      {/* ── Edit Modal (Bottom Sheet) ── */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center"
+          onClick={e => { if (e.target === e.currentTarget) setShowEditModal(false) }}>
+          <div className="bg-bg-surface w-full max-w-[420px] rounded-t-2xl p-5 pb-10 space-y-4">
+            <h3 className="text-sm font-bold text-center">تعديل السعر والشهر</h3>
+
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-[10px] text-text-muted block mb-1">الشهر</label>
+                <select value={editMonth} onChange={e => setEditMonth(parseInt(e.target.value))}
+                  className="w-full h-10 px-2 rounded-xl border border-border bg-bg-base text-sm font-bold">
+                  {AR_MONTHS.map((name, i) => (
+                    <option key={i + 1} value={i + 1}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] text-text-muted block mb-1">السنة</label>
+                <input type="number" value={editYear || ''} onChange={e => setEditYear(parseInt(e.target.value) || 0)}
+                  dir="ltr" className="w-full h-10 px-3 rounded-xl border border-border bg-bg-base font-num text-sm font-bold text-center" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير العادي</label>
+              <div className="relative">
+                <input type="number" value={editNormal} onChange={e => setEditNormal(e.target.value)}
+                  placeholder="0" dir="ltr"
+                  className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-blue-primary focus:outline-none focus:border-blue-primary" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-text-muted block mb-1.5">سعر الأمبير الذهبي</label>
+              <div className="relative">
+                <input type="number" value={editGold} onChange={e => setEditGold(e.target.value)}
+                  placeholder="0" dir="ltr"
+                  className="w-full h-12 px-3 pl-14 rounded-xl border border-border bg-bg-base font-num text-lg font-bold text-gold focus:outline-none focus:border-gold" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">د.ع</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowEditModal(false)}
+                className="flex-1 h-11 rounded-xl bg-bg-muted text-text-secondary text-sm font-bold">
+                إلغاء
+              </button>
+              <button onClick={handleSaveEdit} disabled={saving}
+                className="flex-1 h-11 rounded-xl bg-blue-primary text-white text-sm font-bold disabled:opacity-50">
+                {saving ? 'جاري...' : '✅ تأكيد التعديل'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Generate Confirm Modal ── */}
+      {showGenerateConfirm && preCheckData && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4">
           <div className="bg-bg-surface w-full max-w-[340px] rounded-2xl p-5 space-y-4">
             <h3 className="text-sm font-bold text-center">تأكيد إصدار الفواتير</h3>
-            <div className="bg-bg-muted rounded-xl p-3 text-center">
-              <p className="text-xs text-text-muted mb-1">سيتم إصدار</p>
-              <p className="font-num text-2xl font-bold text-blue-primary">
-                {subscriberCount ?? '—'}
-              </p>
-              <p className="text-xs text-text-muted">فاتورة للشهر <span className="font-num font-bold">{billingMonth}</span> — {AR_MONTHS[billingMonth - 1] ?? ''} <span className="font-num font-bold">{billingYear}</span></p>
+            <div className="bg-bg-muted rounded-xl p-3 space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-text-muted">الشهر</span>
+                <span className="font-bold font-num">{AR_MONTHS[(preCheckData.billing_month || 1) - 1]} {preCheckData.billing_year}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-text-muted">المشتركون النشطون</span>
+                <span className="font-bold font-num text-blue-primary">{preCheckData.active_count}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-text-muted">غير المدفوعين → ديون</span>
+                <span className="font-bold font-num text-danger">{preCheckData.unpaid_count}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-text-muted">فواتير جديدة ستُنشأ</span>
+                <span className="font-bold font-num text-blue-primary">{preCheckData.active_count}</span>
+              </div>
             </div>
-            <p className="text-[10px] text-text-muted text-center">
-              الفواتير السابقة غير المدفوعة ستُنقل إلى الديون المتراكمة
+            <p className="text-[10px] text-danger text-center font-bold">
+              لا يمكن التراجع إلا خلال 24 ساعة
             </p>
             <div className="flex gap-2">
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="flex-1 h-10 rounded-xl bg-bg-muted text-text-secondary text-xs font-bold"
-              >
+              <button onClick={() => setShowGenerateConfirm(false)}
+                className="flex-1 h-10 rounded-xl bg-bg-muted text-text-secondary text-xs font-bold">
                 إلغاء
               </button>
-              <button
-                onClick={handleGenerate}
-                disabled={generating}
-                className="flex-1 h-10 rounded-xl bg-blue-primary text-white text-xs font-bold disabled:opacity-50"
-              >
-                {generating ? 'جاري...' : 'تأكيد الإصدار'}
+              <button onClick={handleGenerate} disabled={generating}
+                className="flex-1 h-10 rounded-xl bg-blue-primary text-white text-xs font-bold disabled:opacity-50">
+                {generating ? 'جاري...' : '✅ إصدار'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reverse Confirm Modal ── */}
+      {showReverseConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4">
+          <div className="bg-bg-surface w-full max-w-[340px] rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold text-center">تراجع عن آخر إصدار</h3>
+            <p className="text-xs text-text-muted text-center">
+              سيتم حذف الفواتير المُصدرة في آخر عملية وإعادة الديون للحالة السابقة
+            </p>
+            <p className="text-[10px] text-danger text-center font-bold">
+              لا يمكن التراجع بعد 24 ساعة من الإصدار
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setShowReverseConfirm(false)}
+                className="flex-1 h-10 rounded-xl bg-bg-muted text-text-secondary text-xs font-bold">
+                إلغاء
+              </button>
+              <button onClick={handleReverse} disabled={reversing}
+                className="flex-1 h-10 rounded-xl text-white text-xs font-bold disabled:opacity-50"
+                style={{ background: 'var(--danger)' }}>
+                {reversing ? 'جاري...' : '↩️ تأكيد التراجع'}
               </button>
             </div>
           </div>

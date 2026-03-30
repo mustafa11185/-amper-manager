@@ -282,6 +282,7 @@ model Branch {
   subscriber_discounts SubscriberDiscount[]
   collector_discount_requests CollectorDiscountRequest[]
   alleys             Alley[]
+  invoice_generation_logs InvoiceGenerationLog[]
   @@index([tenant_id, is_active])
   @@map("branches")
 }
@@ -438,6 +439,23 @@ model Invoice {
   @@index([branch_id, billing_month, billing_year])
   @@index([is_fully_paid, branch_id])
   @@map("invoices")
+}
+
+model InvoiceGenerationLog {
+  id            String    @id @default(uuid())
+  branch_id     String
+  tenant_id     String
+  generated_at  DateTime  @default(now())
+  invoice_count Int
+  debt_count    Int       @default(0)
+  generated_by  String
+  billing_month Int
+  billing_year  Int
+  is_reversed   Boolean   @default(false)
+  reversed_at   DateTime?
+  branch        Branch    @relation(fields: [branch_id], references: [id])
+  @@index([branch_id, generated_at])
+  @@map("invoice_generation_logs")
 }
 
 model MeterReading {

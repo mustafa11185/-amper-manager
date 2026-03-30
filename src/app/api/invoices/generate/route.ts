@@ -16,147 +16,166 @@ export async function POST(req: NextRequest) {
     const { branch_id } = await req.json()
     const tenantId = user.tenantId as string
 
-    // Get the latest pricing for this branch
-    const branchFilter = branch_id
-      ? { id: branch_id, tenant_id: tenantId }
-      : { tenant_id: tenantId }
+    if (!branch_id) {
+      return NextResponse.json({ error: 'branch_id مطلوب' }, { status: 400 })
+    }
 
-    const branches = await prisma.branch.findMany({
-      where: branchFilter,
-      select: { id: true },
+    // Verify branch belongs to tenant
+    const branch = await prisma.branch.findFirst({
+      where: { id: branch_id, tenant_id: tenantId },
     })
-    const branchIds = branches.map(b => b.id)
-
-    if (branchIds.length === 0) {
-      return NextResponse.json({ error: 'لا توجد فروع' }, { status: 400 })
+    if (!branch) {
+      return NextResponse.json({ error: 'الفرع غير موجود' }, { status: 404 })
     }
 
-    // Get latest pricing per branch
-    const pricingMap = new Map<string, { price_normal: number; price_gold: number; month: number; year: number }>()
-    for (const bid of branchIds) {
-      const pricing = await prisma.monthlyPricing.findFirst({
-        where: { branch_id: bid },
-        orderBy: { effective_from: 'desc' },
-      })
-      if (pricing) {
-        const effectiveDate = new Date(pricing.effective_from)
-        pricingMap.set(bid, {
-          price_normal: Number(pricing.price_per_amp_normal),
-          price_gold: Number(pricing.price_per_amp_gold),
-          month: effectiveDate.getMonth() + 1,
-          year: effectiveDate.getFullYear(),
-        })
-      }
+    // Get latest pricing
+    const pricing = await prisma.monthlyPricing.findFirst({
+      where: { branch_id },
+      orderBy: { effective_from: 'desc' },
+    })
+
+    if (!pricing) {
+      return NextResponse.json({ error: 'يجب تحديد سعر الأمبير أولاً' }, { status: 400 })
     }
 
-    if (pricingMap.size === 0) {
-      return NextResponse.json({ error: 'لم يتم تحديد تسعير — احفظ التسعير أولاً' }, { status: 400 })
+    const priceNormal = Number(pricing.price_per_amp_normal)
+    const priceGold = Number(pricing.price_per_amp_gold)
+
+    if (priceNormal <= 0 && priceGold <= 0) {
+      return NextResponse.json({ error: 'يجب تحديد سعر الأمبير أولاً' }, { status: 400 })
     }
 
-    // Check if invoices already exist for this billing period (once-per-month guard)
-    for (const [bid, p] of pricingMap) {
-      const existingCount = await prisma.invoice.count({
-        where: { branch_id: bid, billing_month: p.month, billing_year: p.year },
-      })
-      if (existingCount > 0) {
-        return NextResponse.json({
-          error: `تم إصدار فواتير شهر ${p.month}/${p.year} مسبقاً (${existingCount} فاتورة)`,
-          invoices_created: 0,
-          invoices_skipped: existingCount,
-          total_subscribers: 0,
-          billing_month: p.month,
-          billing_year: p.year,
-          already_generated: true,
-        }, { status: 409 })
-      }
+    const billingMonth = new Date(pricing.effective_from).getMonth() + 1
+    const billingYear = new Date(pricing.effective_from).getFullYear()
+
+    if (!billingMonth || !billingYear) {
+      return NextResponse.json({ error: 'يجب تحديد الشهر المستحق أولاً' }, { status: 400 })
     }
+
+    // CHECK 3: Was invoice generation already done today for this branch?
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todayEnd = new Date()
+    todayEnd.setHours(23, 59, 59, 999)
+
+    const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
+      where: {
+        branch_id,
+        is_reversed: false,
+        generated_at: { gte: todayStart, lte: todayEnd },
+      },
+      orderBy: { generated_at: 'desc' },
+    })
+
+    if (lastGenToday) {
+      const time = new Date(lastGenToday.generated_at).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
+      return NextResponse.json({
+        error: `تم الإصدار اليوم الساعة ${time} — يمكن الإصدار غداً`,
+        already_generated_today: true,
+      }, { status: 409 })
+    }
+
+    // Get all active subscribers
+    const subscribers = await prisma.subscriber.findMany({
+      where: { branch_id, is_active: true },
+      select: { id: true, amperage: true, subscription_type: true, tenant_id: true, total_debt: true },
+    })
+
+    // Count unpaid invoices that will become debt
+    const unpaidInvoices = await prisma.invoice.findMany({
+      where: {
+        branch_id,
+        is_fully_paid: false,
+      },
+      select: { id: true, subscriber_id: true, total_amount_due: true, amount_paid: true },
+    })
 
     let totalCreated = 0
-    let totalSkipped = 0
-    let totalSubscribers = 0
+    let totalDebtAdded = 0
 
     await prisma.$transaction(async (tx) => {
-      for (const [bid, pricing] of pricingMap) {
-        const { price_normal, price_gold, month, year } = pricing
-
-        // Get all active subscribers in this branch
-        const subscribers = await tx.subscriber.findMany({
-          where: { branch_id: bid, is_active: true },
-          select: { id: true, amperage: true, subscription_type: true, total_debt: true },
-        })
-
-        for (const sub of subscribers) {
-          totalSubscribers++
-          // Check if invoice already exists for this month
-          const existing = await tx.invoice.findFirst({
-            where: {
-              subscriber_id: sub.id,
-              billing_month: month,
-              billing_year: year,
-            },
-          })
-          if (existing) { totalSkipped++; continue }
-
-          // Move any unpaid past invoices to total_debt
-          const unpaidPast = await tx.invoice.findMany({
-            where: {
-              subscriber_id: sub.id,
-              is_fully_paid: false,
-              NOT: { billing_month: month, billing_year: year },
-            },
-          })
-
-          let debtToAdd = 0
-          for (const inv of unpaidPast) {
-            const remaining = Number(inv.total_amount_due) - Number(inv.amount_paid)
-            if (remaining > 0) debtToAdd += remaining
-          }
-
-          if (debtToAdd > 0) {
-            await tx.subscriber.update({
-              where: { id: sub.id },
-              data: { total_debt: { increment: debtToAdd } },
-            })
-            // Mark old unpaid invoices as settled (moved to debt)
-            for (const inv of unpaidPast) {
-              await tx.invoice.update({
-                where: { id: inv.id },
-                data: { is_fully_paid: true },
-              })
-            }
-          }
-
-          // Calculate new invoice amount
-          const amperage = Number(sub.amperage)
-          const pricePerAmp = sub.subscription_type === 'gold' ? price_gold : price_normal
-          const totalDue = Math.round(amperage * pricePerAmp)
-
-          // Create new invoice
-          await tx.invoice.create({
-            data: {
-              subscriber_id: sub.id,
-              branch_id: bid,
-              tenant_id: tenantId,
-              billing_month: month,
-              billing_year: year,
-              base_amount: totalDue,
-              total_amount_due: totalDue,
-            },
-          })
-
-          totalCreated++
+      // Step 1: Roll unpaid invoices into subscriber debt
+      const debtBySubscriber = new Map<string, number>()
+      for (const inv of unpaidInvoices) {
+        const remaining = Number(inv.total_amount_due) - Number(inv.amount_paid)
+        if (remaining > 0) {
+          debtBySubscriber.set(inv.subscriber_id, (debtBySubscriber.get(inv.subscriber_id) || 0) + remaining)
         }
       }
+
+      for (const [subId, debtAmount] of debtBySubscriber) {
+        await tx.subscriber.update({
+          where: { id: subId },
+          data: { total_debt: { increment: debtAmount } },
+        })
+        totalDebtAdded++
+      }
+
+      // Mark unpaid invoices as rolled to debt
+      if (unpaidInvoices.length > 0) {
+        await tx.invoice.updateMany({
+          where: {
+            id: { in: unpaidInvoices.map(i => i.id) },
+          },
+          data: { is_fully_paid: true, payment_method: 'rolled_to_debt' },
+        })
+      }
+
+      // Step 2: Create new invoices for all active subscribers
+      for (const sub of subscribers) {
+        const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
+        const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
+
+        // Delete any existing invoice for this period (to avoid unique constraint)
+        await tx.invoice.deleteMany({
+          where: {
+            subscriber_id: sub.id,
+            billing_month: billingMonth,
+            billing_year: billingYear,
+            is_fully_paid: false,
+            amount_paid: 0,
+          },
+        })
+
+        await tx.invoice.create({
+          data: {
+            subscriber_id: sub.id,
+            branch_id,
+            tenant_id: tenantId,
+            billing_month: billingMonth,
+            billing_year: billingYear,
+            base_amount: totalDue,
+            total_amount_due: totalDue,
+            amount_paid: 0,
+            is_fully_paid: false,
+          },
+        })
+        totalCreated++
+      }
+
+      // Step 3: Create generation log
+      await tx.invoiceGenerationLog.create({
+        data: {
+          branch_id,
+          tenant_id: tenantId,
+          invoice_count: totalCreated,
+          debt_count: totalDebtAdded,
+          billing_month: billingMonth,
+          billing_year: billingYear,
+          generated_by: user.staffId || user.id || 'owner',
+        },
+      })
     })
 
     return NextResponse.json({
-      invoices_created: totalCreated,
-      invoices_skipped: totalSkipped,
-      total_subscribers: totalSubscribers,
-      billing_month: pricingMap.values().next().value?.month,
-      billing_year: pricingMap.values().next().value?.year,
+      ok: true,
+      generated: totalCreated,
+      debts_added: totalDebtAdded,
+      billing_month: billingMonth,
+      billing_year: billingYear,
     })
   } catch (err: any) {
+    console.error('Invoice generate error:', err)
     return NextResponse.json({ error: err.message || 'خطأ في إصدار الفواتير' }, { status: 500 })
   }
 }
