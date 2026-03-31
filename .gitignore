@@ -41,3 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+firebase-service-account.json
+amper-app-a045a-firebase-adminsdk-fbsvc-531c6f01b9.json

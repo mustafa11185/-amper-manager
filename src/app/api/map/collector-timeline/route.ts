@@ -32,12 +32,11 @@ export async function GET(req: NextRequest) {
     // Get today's payments by this collector
     const payments = await prisma.posTransaction.findMany({
       where: {
-        collector_id: staffId,
+        staff_id: staffId,
         created_at: { gte: dayStart, lte: dayEnd },
       },
       orderBy: { created_at: 'asc' },
-      select: {
-        id: true, amount: true, created_at: true,
+      include: {
         subscriber: { select: { name: true } },
       },
     })

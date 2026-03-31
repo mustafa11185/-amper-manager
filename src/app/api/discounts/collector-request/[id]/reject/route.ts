@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sendPushNotification, pushTemplates } from '@/lib/push'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -60,6 +61,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         payload: { staff_id: request.staff_id, subscriber_id: request.subscriber_id, request_id: id },
       },
     })
+
+    // Push notification
+    const push = pushTemplates.discountRejected()
+    sendPushNotification({ staff_id: request.staff_id, ...push }).catch(() => {})
 
     return NextResponse.json({ request: updated })
   } catch (err: any) {

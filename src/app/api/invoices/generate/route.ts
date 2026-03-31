@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sendPushToBranch, pushTemplates } from '@/lib/push'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -166,6 +167,12 @@ export async function POST(req: NextRequest) {
         },
       })
     })
+
+    // Notify all collectors in branch
+    try {
+      const push = pushTemplates.invoiceGenerated(totalCreated, billingMonth)
+      sendPushToBranch({ branch_id, ...push, roles: ['collector'] }).catch(() => {})
+    } catch (_) {}
 
     return NextResponse.json({
       ok: true,

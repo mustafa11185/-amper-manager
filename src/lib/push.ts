@@ -1,30 +1,28 @@
-// ══════════════════════════════════════════════════════════════
-//  Push Notification Sender
-//
-//  SETUP REQUIRED:
-//  1. npm install firebase-admin
-//  2. Create service account key in Firebase Console:
-//     Project Settings → Service Accounts → Generate Key
-//  3. Save as firebase-service-account.json in project root
-//  4. Add to .env:
-//     FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
-//  5. Uncomment the Firebase initialization below
-// ══════════════════════════════════════════════════════════════
-
+import { initializeApp, cert, getApps } from 'firebase-admin/app'
+import { getMessaging } from 'firebase-admin/messaging'
 import { prisma } from './prisma'
+import path from 'path'
+import fs from 'fs'
 
-// ── Firebase Admin (uncomment when ready) ──
-// import { initializeApp, cert, getApps } from 'firebase-admin/app'
-// import { getMessaging } from 'firebase-admin/messaging'
-//
-// if (getApps().length === 0 && process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
-//   const serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT_PATH)
-//   initializeApp({ credential: cert(serviceAccount) })
-// }
+// Initialize Firebase Admin SDK
+const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+if (getApps().length === 0 && serviceAccountPath) {
+  try {
+    const fullPath = path.resolve(serviceAccountPath)
+    if (fs.existsSync(fullPath)) {
+      const serviceAccount = JSON.parse(fs.readFileSync(fullPath, 'utf8'))
+      initializeApp({ credential: cert(serviceAccount) })
+      console.log('[Firebase] Admin SDK initialized')
+    } else {
+      console.warn(`[Firebase] Service account file not found: ${fullPath}`)
+    }
+  } catch (e) {
+    console.error('[Firebase] Init error:', e)
+  }
+}
 
 /**
  * Send push notification to a staff member
- * Falls back gracefully if Firebase is not configured
  */
 export async function sendPushNotification({
   staff_id,
@@ -38,47 +36,45 @@ export async function sendPushNotification({
   data?: Record<string, string>
 }) {
   try {
-    // Get active device tokens for this staff
     const devices = await prisma.staffDevice.findMany({
       where: { staff_id, is_active: true },
     })
 
-    if (!devices.length) {
-      console.log(`[push] No devices for staff ${staff_id}`)
-      return
-    }
+    if (!devices.length) return
 
     const tokens = devices.map(d => d.fcm_token)
 
-    // ── Firebase push (uncomment when configured) ──
-    // try {
-    //   const messaging = getMessaging()
-    //   const result = await messaging.sendEachForMulticast({
-    //     tokens,
-    //     notification: { title, body },
-    //     data: data ?? {},
-    //     android: {
-    //       priority: 'high',
-    //       notification: { sound: 'default' },
-    //     },
-    //   })
-    //
-    //   // Clean up invalid tokens
-    //   result.responses.forEach((resp, idx) => {
-    //     if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
-    //       prisma.staffDevice.updateMany({
-    //         where: { fcm_token: tokens[idx] },
-    //         data: { is_active: false },
-    //       }).catch(() => {})
-    //     }
-    //   })
-    //
-    //   console.log(`[push] Sent to ${result.successCount}/${tokens.length} devices for staff ${staff_id}`)
-    // } catch (e) {
-    //   console.error('[push] Firebase error:', e)
-    // }
+    if (getApps().length === 0) {
+      console.log(`[push] Firebase not configured — would send "${title}" to ${tokens.length} devices`)
+      return
+    }
 
-    console.log(`[push] Would send to ${tokens.length} devices: "${title}" — ${body}`)
+    try {
+      const messaging = getMessaging()
+      const result = await messaging.sendEachForMulticast({
+        tokens,
+        notification: { title, body },
+        data: data ?? {},
+        android: {
+          priority: 'high',
+          notification: { sound: 'default' },
+        },
+      })
+
+      // Clean up invalid tokens
+      result.responses.forEach((resp, idx) => {
+        if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
+          prisma.staffDevice.updateMany({
+            where: { fcm_token: tokens[idx] },
+            data: { is_active: false },
+          }).catch(() => {})
+        }
+      })
+
+      console.log(`[push] Sent to ${result.successCount}/${tokens.length} devices for staff ${staff_id}`)
+    } catch (e) {
+      console.error('[push] Send error:', e)
+    }
   } catch (e) {
     console.error('[push] Error:', e)
   }
@@ -93,23 +89,21 @@ export async function sendPushToBranch({
   body,
   data,
   exclude_staff_id,
+  roles,
 }: {
   branch_id: string
   title: string
   body: string
   data?: Record<string, string>
   exclude_staff_id?: string
+  roles?: string[]
 }) {
   try {
-    const staff = await prisma.staff.findMany({
-      where: {
-        branch_id,
-        is_active: true,
-        ...(exclude_staff_id ? { id: { not: exclude_staff_id } } : {}),
-      },
-      select: { id: true },
-    })
+    const where: any = { branch_id, is_active: true }
+    if (exclude_staff_id) where.id = { not: exclude_staff_id }
+    if (roles) where.role = { in: roles }
 
+    const staff = await prisma.staff.findMany({ where, select: { id: true } })
     for (const s of staff) {
       await sendPushNotification({ staff_id: s.id, title, body, data })
     }
@@ -119,44 +113,66 @@ export async function sendPushToBranch({
 }
 
 /**
- * Notification type helpers
+ * Send to branch owner(s)
  */
+export async function sendPushToOwner({
+  tenant_id,
+  title,
+  body,
+  data,
+}: {
+  tenant_id: string
+  title: string
+  body: string
+  data?: Record<string, string>
+}) {
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenant_id } })
+    if (!tenant) return
+    // Owner's staff record (is_owner_acting)
+    const ownerStaff = await prisma.staff.findMany({
+      where: { tenant_id, is_owner_acting: true, is_active: true },
+      select: { id: true },
+    })
+    for (const s of ownerStaff) {
+      await sendPushNotification({ staff_id: s.id, title, body, data })
+    }
+    // Also try tenant id directly (owner logged in as tenant)
+    await sendPushNotification({ staff_id: tenant_id, title, body, data })
+  } catch (e) {
+    console.error('[push] Owner send error:', e)
+  }
+}
+
 export const pushTemplates = {
   paymentReceived: (collectorName: string, amount: number, subscriberName: string) => ({
     title: '💳 دفعة جديدة',
     body: `${collectorName} جمع ${amount.toLocaleString()} د.ع من ${subscriberName}`,
   }),
-
   discountRequest: (collectorName: string, amount: number) => ({
     title: '🎁 طلب خصم',
     body: `${collectorName} يطلب خصم ${amount.toLocaleString()} د.ع`,
   }),
-
   discountApproved: (amount: number) => ({
     title: '✅ تم قبول الخصم',
     body: `تم الموافقة على خصم ${amount.toLocaleString()} د.ع`,
   }),
-
   discountRejected: () => ({
     title: '❌ تم رفض الخصم',
     body: 'تم رفض الخصم — أضيف للدين',
   }),
-
   walletReceived: (amount: number) => ({
     title: '💰 استلام من المحفظة',
     body: `استلم المدير ${amount.toLocaleString()} د.ع من محفظتك`,
   }),
-
   collectorCall: (subscriberName: string) => ({
     title: '📞 طلب زيارة',
     body: `${subscriberName} يطلب زيارة الجابي`,
   }),
-
   onlinePayment: (amount: number, subscriberName: string) => ({
     title: '💳 دفع إلكتروني',
     body: `${amount.toLocaleString()} د.ع من ${subscriberName}`,
   }),
-
   invoiceGenerated: (count: number, month: number) => ({
     title: '📄 إصدار فواتير',
     body: `تم إصدار ${count} فاتورة لشهر ${month}`,

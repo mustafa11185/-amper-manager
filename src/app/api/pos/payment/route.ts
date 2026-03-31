@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sendPushToOwner, pushTemplates } from '@/lib/push'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -200,6 +201,16 @@ export async function POST(req: NextRequest) {
         subscriber_name: subscriber.name,
       }
     })
+
+    // Push notification to owner
+    try {
+      const subName = result.subscriber_name || ''
+      const sub = await prisma.subscriber.findUnique({ where: { id: subscriber_id }, select: { tenant_id: true } })
+      if (sub) {
+        const push = pushTemplates.paymentReceived(user.name || 'جابي', amount, subName)
+        sendPushToOwner({ tenant_id: sub.tenant_id, ...push }).catch(() => {})
+      }
+    } catch (_) {}
 
     return NextResponse.json(result)
   } catch (err: any) {
