@@ -202,15 +202,17 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Push notification to owner
-    try {
-      const subName = result.subscriber_name || ''
-      const sub = await prisma.subscriber.findUnique({ where: { id: subscriber_id }, select: { tenant_id: true } })
-      if (sub) {
-        const push = pushTemplates.paymentReceived(user.name || 'جابي', amount, subName)
-        sendPushToOwner({ tenant_id: sub.tenant_id, ...push }).catch(() => {})
-      }
-    } catch (_) {}
+    // Push notification to owner (only when staff pays, not when owner pays)
+    if (user.role !== 'owner') {
+      try {
+        const subName = result.subscriber_name || ''
+        const sub = await prisma.subscriber.findUnique({ where: { id: subscriber_id }, select: { tenant_id: true } })
+        if (sub) {
+          const push = pushTemplates.paymentReceived(user.name || 'جابي', amount, subName)
+          sendPushToOwner({ tenant_id: sub.tenant_id, ...push }).catch(() => {})
+        }
+      } catch (_) {}
+    }
 
     return NextResponse.json(result)
   } catch (err: any) {
