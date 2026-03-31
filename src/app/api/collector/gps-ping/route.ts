@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const user = session.user as any
 
   try {
-    const { lat, lng, accuracy } = await req.json()
+    const { lat, lng, accuracy, is_stop, stop_duration_min, event_type, subscriber_id } = await req.json()
 
     const log = await prisma.staffGpsLog.create({
       data: {
@@ -20,11 +20,14 @@ export async function POST(req: NextRequest) {
         lat,
         lng,
         accuracy_m: accuracy || null,
-        source: 'auto',
+        source: event_type || 'auto',
+        payment_id: subscriber_id || null,
+        is_stop: is_stop || false,
+        stop_duration_min: stop_duration_min || null,
       },
     })
 
-    return NextResponse.json({ log })
+    return NextResponse.json({ ok: true, id: log.id, is_stop: log.is_stop })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'خطأ' }, { status: 500 })
   }
