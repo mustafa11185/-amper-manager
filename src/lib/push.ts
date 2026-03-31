@@ -5,16 +5,24 @@ import path from 'path'
 import fs from 'fs'
 
 // Initialize Firebase Admin SDK
-const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-if (getApps().length === 0 && serviceAccountPath) {
+// Priority: env JSON string > env file path
+if (getApps().length === 0) {
   try {
-    const fullPath = path.resolve(serviceAccountPath)
-    if (fs.existsSync(fullPath)) {
-      const serviceAccount = JSON.parse(fs.readFileSync(fullPath, 'utf8'))
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
       initializeApp({ credential: cert(serviceAccount) })
-      console.log('[Firebase] Admin SDK initialized')
+      console.log('[Firebase] Admin SDK initialized from env variable')
+    } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+      const fullPath = path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_PATH)
+      if (fs.existsSync(fullPath)) {
+        const serviceAccount = JSON.parse(fs.readFileSync(fullPath, 'utf8'))
+        initializeApp({ credential: cert(serviceAccount) })
+        console.log('[Firebase] Admin SDK initialized from file')
+      } else {
+        console.warn(`[Firebase] Service account file not found: ${fullPath}`)
+      }
     } else {
-      console.warn(`[Firebase] Service account file not found: ${fullPath}`)
+      console.warn('[Firebase] No service account configured — push disabled')
     }
   } catch (e) {
     console.error('[Firebase] Init error:', e)
