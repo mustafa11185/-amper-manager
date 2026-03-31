@@ -509,9 +509,24 @@ model Staff {
   collector_permission  CollectorPermission?
   gps_logs              StaffGpsLog[]
   discount_requests     CollectorDiscountRequest[]
+  devices               StaffDevice[]
   @@unique([phone, tenant_id])
   @@index([branch_id, role])
   @@map("staff")
+}
+
+model StaffDevice {
+  id         String   @id @default(uuid())
+  staff_id   String
+  fcm_token  String
+  platform   String   @default("android")
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  staff      Staff    @relation(fields: [staff_id], references: [id])
+  @@unique([staff_id, fcm_token])
+  @@index([staff_id])
+  @@map("staff_devices")
 }
 
 model StaffBranchAccess {

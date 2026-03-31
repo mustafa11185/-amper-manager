@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sendPushNotification, pushTemplates } from '@/lib/push'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -65,12 +66,15 @@ export async function POST(req: NextRequest) {
       await prisma.notification.create({
         data: {
           branch_id: wallet.branch_id,
+          tenant_id: wallet.tenant_id || '',
           type: 'wallet_delivery',
           title: 'تم استلام مبلغ',
           body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظتك`,
-          staff_id: staff_id,
         },
       })
+      // Push notification
+      const push = pushTemplates.walletReceived(deliverAmount)
+      sendPushNotification({ staff_id, ...push }).catch(() => {})
     } catch (_) {
       // notification is best-effort
     }
