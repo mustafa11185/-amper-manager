@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { staff_id, amount, notes } = await req.json()
+    const { staff_id, amount, notes, deduct_salary, salary_amount } = await req.json()
 
     if (!staff_id || !amount || amount <= 0) {
       return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
@@ -34,8 +34,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'الرصيد غير كافٍ' }, { status: 400 })
     }
 
-    // Transaction: update wallet + create delivery record
-    const [updatedWallet] = await prisma.$transaction([
+    const salaryDeduct = deduct_salary && salary_amount > 0 ? Math.min(Number(salary_amount), deliverAmount) : 0
+    const netToManager = deliverAmount - salaryDeduct
+
+    // Transaction: update wallet + create delivery record + optional salary payment
+    const [updatedWallet, delivery] = await prisma.$transaction([
       prisma.collectorWallet.update({
         where: { staff_id },
         data: {
@@ -61,7 +64,34 @@ export async function POST(req: NextRequest) {
       }),
     ])
 
-    // Create notification for collector
+    // Create salary payment record if salary was deducted
+    if (salaryDeduct > 0) {
+      try {
+        const now = new Date()
+        const staff = await prisma.staff.findUnique({
+          where: { id: staff_id },
+          select: { salary: true },
+        })
+        await prisma.salaryPayment.create({
+          data: {
+            staff_id,
+            tenant_id: wallet.tenant_id,
+            branch_id: wallet.branch_id,
+            month: now.getMonth() + 1,
+            year: now.getFullYear(),
+            amount: salaryDeduct,
+            salary_type: staff?.salary?.salary_type || 'fixed',
+            paid_from_wallet: true,
+            delivery_id: delivery.id,
+            notes: `خصم من استلام محفظة`,
+          },
+        })
+      } catch (salaryErr: any) {
+        console.log('Salary payment record failed (non-critical):', salaryErr.message)
+      }
+    }
+
+    // Notification
     try {
       await prisma.notification.create({
         data: {
@@ -72,17 +102,16 @@ export async function POST(req: NextRequest) {
           body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظتك`,
         },
       })
-      // Push notification
       const push = pushTemplates.walletReceived(deliverAmount)
       sendPushNotification({ staff_id, ...push }).catch(() => {})
-    } catch (_) {
-      // notification is best-effort
-    }
+    } catch (_) {}
 
     return NextResponse.json({
       ok: true,
       new_balance: Number(updatedWallet.balance),
       delivered: deliverAmount,
+      salary_deducted: salaryDeduct,
+      net_to_manager: netToManager,
     })
   } catch (e: any) {
     console.error('[wallets/deliver]', e)

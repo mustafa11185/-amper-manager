@@ -93,6 +93,8 @@ model Tenant {
   subscriber_app_settings SubscriberAppSettings[]
   pos_devices           PosDevice[]
   discounts             TenantDiscount[]
+  staff_salaries        StaffSalary[]
+  salary_payments       SalaryPayment[]
   @@map("tenants")
 }
 
@@ -510,6 +512,8 @@ model Staff {
   gps_logs              StaffGpsLog[]
   discount_requests     CollectorDiscountRequest[]
   devices               StaffDevice[]
+  salary                StaffSalary?
+  salary_payments       SalaryPayment[]
   @@unique([phone, tenant_id])
   @@index([branch_id, role])
   @@map("staff")
@@ -1188,4 +1192,39 @@ model LoadLog {
   logged_at        DateTime @default(now())
   @@index([engine_id, logged_at])
   @@map("load_logs")
+}
+
+model StaffSalary {
+  id              String   @id @default(uuid())
+  staff_id        String   @unique
+  tenant_id       String
+  branch_id       String
+  salary_type     String   @default("fixed")
+  fixed_amount    Decimal  @default(0) @db.Decimal(12,2)
+  commission_rate Decimal  @default(0) @db.Decimal(5,2)
+  effective_from  DateTime @default(now())
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  staff           Staff    @relation(fields: [staff_id], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id])
+  @@map("staff_salaries")
+}
+
+model SalaryPayment {
+  id              String   @id @default(uuid())
+  staff_id        String
+  tenant_id       String
+  branch_id       String
+  month           Int
+  year            Int
+  amount          Decimal  @db.Decimal(12,2)
+  salary_type     String
+  paid_from_wallet Boolean @default(true)
+  delivery_id     String?
+  notes           String?
+  paid_at         DateTime @default(now())
+  created_at      DateTime @default(now())
+  staff           Staff    @relation(fields: [staff_id], references: [id])
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id])
+  @@map("salary_payments")
 }
