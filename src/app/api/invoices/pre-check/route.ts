@@ -39,22 +39,34 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if already generated today
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date()
-    todayEnd.setHours(23, 59, 59, 999)
+    let alreadyGeneratedToday = false
+    let generatedAt: Date | null = null
 
-    const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
-      where: {
-        branch_id,
-        is_reversed: false,
-        generated_at: { gte: todayStart, lte: todayEnd },
-      },
-      orderBy: { generated_at: 'desc' },
-    })
+    try {
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayEnd = new Date()
+      todayEnd.setHours(23, 59, 59, 999)
 
-    if (lastGenToday) {
-      const time = new Date(lastGenToday.generated_at).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
+      const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
+        where: {
+          branch_id,
+          is_reversed: false,
+          generated_at: { gte: todayStart, lte: todayEnd },
+        },
+        orderBy: { generated_at: 'desc' },
+      })
+
+      alreadyGeneratedToday = !!lastGenToday
+      generatedAt = lastGenToday?.generated_at ?? null
+    } catch (e: any) {
+      // Table might not exist yet — treat as not generated
+      console.log('InvoiceGenerationLog query failed (table may not exist):', e.message)
+      alreadyGeneratedToday = false
+    }
+
+    if (alreadyGeneratedToday && generatedAt) {
+      const time = new Date(generatedAt).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
       return NextResponse.json({
         check_failed: 'already_today',
         error: `تم الإصدار اليوم الساعة ${time} — يمكن الإصدار غداً`,

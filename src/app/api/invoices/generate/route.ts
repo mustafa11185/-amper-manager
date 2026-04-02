@@ -54,26 +54,30 @@ export async function POST(req: NextRequest) {
     }
 
     // CHECK 3: Was invoice generation already done today for this branch?
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date()
-    todayEnd.setHours(23, 59, 59, 999)
+    try {
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayEnd = new Date()
+      todayEnd.setHours(23, 59, 59, 999)
 
-    const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
-      where: {
-        branch_id,
-        is_reversed: false,
-        generated_at: { gte: todayStart, lte: todayEnd },
-      },
-      orderBy: { generated_at: 'desc' },
-    })
+      const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
+        where: {
+          branch_id,
+          is_reversed: false,
+          generated_at: { gte: todayStart, lte: todayEnd },
+        },
+        orderBy: { generated_at: 'desc' },
+      })
 
-    if (lastGenToday) {
-      const time = new Date(lastGenToday.generated_at).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
-      return NextResponse.json({
-        error: `تم الإصدار اليوم الساعة ${time} — يمكن الإصدار غداً`,
-        already_generated_today: true,
-      }, { status: 409 })
+      if (lastGenToday) {
+        const time = new Date(lastGenToday.generated_at).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
+        return NextResponse.json({
+          error: `تم الإصدار اليوم الساعة ${time} — يمكن الإصدار غداً`,
+          already_generated_today: true,
+        }, { status: 409 })
+      }
+    } catch (e: any) {
+      console.log('InvoiceGenerationLog check failed (table may not exist):', e.message)
     }
 
     // Get all active subscribers
@@ -154,8 +158,11 @@ export async function POST(req: NextRequest) {
         totalCreated++
       }
 
-      // Step 3: Create generation log
-      await tx.invoiceGenerationLog.create({
+    })
+
+    // Create generation log outside transaction (non-critical)
+    try {
+      await prisma.invoiceGenerationLog.create({
         data: {
           branch_id,
           tenant_id: tenantId,
@@ -166,7 +173,9 @@ export async function POST(req: NextRequest) {
           generated_by: user.staffId || user.id || 'owner',
         },
       })
-    })
+    } catch (logErr: any) {
+      console.log('InvoiceGenerationLog creation failed:', logErr.message)
+    }
 
     // Notify all collectors in branch
     try {
