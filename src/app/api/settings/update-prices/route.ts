@@ -58,32 +58,10 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Update ONLY unpaid invoices for this specific billing month/year
-    const unpaidInvoices = await prisma.invoice.findMany({
-      where: {
-        branch_id,
-        is_fully_paid: false,
-        billing_month: bMonth,
-        billing_year: bYear,
-      },
-      include: { subscriber: { select: { amperage: true, subscription_type: true } } },
-    })
+    // Price update ONLY changes MonthlyPricing — does NOT touch existing invoices
+    // Invoices are recalculated only during invoice generation (POST /api/invoices/generate)
 
-    let updated = 0
-    for (const inv of unpaidInvoices) {
-      const sub = (inv as any).subscriber
-      if (!sub) continue
-      const pricePerAmp = sub.subscription_type === 'gold' ? priceG : priceN
-      const newAmount = Math.round(Number(sub.amperage) * pricePerAmp)
-
-      await prisma.invoice.update({
-        where: { id: inv.id },
-        data: { total_amount_due: newAmount, base_amount: newAmount },
-      })
-      updated++
-    }
-
-    return NextResponse.json({ ok: true, invoices_updated: updated, billing_month: bMonth, billing_year: bYear })
+    return NextResponse.json({ ok: true, billing_month: bMonth, billing_year: bYear })
   } catch (error) {
     console.error('update-prices error:', error)
     return NextResponse.json({ error: String(error) }, { status: 500 })

@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   if (alley) where.alley = alley
   if (alleyId) where.alley_id = alleyId
 
-  // Special handling for 'unpaid' — subscribers who have NOT fully paid current billing month
+  // Special handling for 'unpaid' — subscribers who have an unpaid invoice OR have debt
   if (status === 'unpaid') {
     delete where.total_debt
     where.is_active = true
@@ -75,29 +75,58 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Find subscribers who HAVE a fully-paid invoice for this billing period
-    const paidThisMonth = await prisma.invoice.findMany({
+    // Find subscribers who have an UNPAID invoice for this billing period
+    const unpaidInvoices = await prisma.invoice.findMany({
       where: {
         tenant_id: tenantId,
         billing_month: bMonth,
         billing_year: bYear,
-        is_fully_paid: true,
+        is_fully_paid: false,
       },
       select: { subscriber_id: true },
       distinct: ['subscriber_id'],
     })
-    const paidIds = paidThisMonth.map(i => i.subscriber_id)
+    const unpaidIds = unpaidInvoices.map(i => i.subscriber_id)
 
-    // Show subscribers NOT in the paid list (= unpaid)
-    if (paidIds.length > 0) {
-      where.id = { notIn: paidIds }
+    // Find subscribers with accumulated debt
+    const debtors = await prisma.subscriber.findMany({
+      where: {
+        tenant_id: tenantId,
+        is_active: true,
+        total_debt: { gt: 0 },
+      },
+      select: { id: true },
+    })
+    const debtorIds = debtors.map(d => d.id)
+
+    // Combine: unpaid invoice OR has debt (deduplicate)
+    const allUnpaidIds = [...new Set([...unpaidIds, ...debtorIds])]
+    if (allUnpaidIds.length > 0) {
+      where.id = { in: allUnpaidIds }
+    } else {
+      // No one unpaid — return empty
+      where.id = { in: [] }
     }
-    // If nobody paid, no filter needed — all are unpaid
   }
 
   const orderBy = sort === 'debt_desc'
     ? { total_debt: 'desc' as const }
     : { created_at: 'desc' as const }
+
+  // Get billing month for current_invoice lookup
+  let currentBMonth = new Date().getMonth() + 1
+  let currentBYear = new Date().getFullYear()
+  try {
+    const pricing = await prisma.monthlyPricing.findFirst({
+      where: { branch_id: branchId ? branchId : undefined },
+      orderBy: { effective_from: 'desc' },
+    })
+    if (pricing) {
+      const eff = new Date(pricing.effective_from)
+      currentBMonth = eff.getMonth() + 1
+      currentBYear = eff.getFullYear()
+    }
+  } catch {}
 
   const [subscribers, total] = await Promise.all([
     prisma.subscriber.findMany({
@@ -119,20 +148,46 @@ export async function GET(req: NextRequest) {
         alley_id: true,
         needs_attention: true,
         created_at: true,
+        invoices: {
+          where: { billing_month: currentBMonth, billing_year: currentBYear },
+          take: 1,
+          select: {
+            id: true,
+            billing_month: true,
+            billing_year: true,
+            total_amount_due: true,
+            amount_paid: true,
+            is_fully_paid: true,
+          },
+        },
       },
     }),
     prisma.subscriber.count({ where }),
   ])
 
   return NextResponse.json({
-    subscribers: subscribers.map(s => ({
-      ...s,
-      amperage: Number(s.amperage),
-      total_debt: Number(s.total_debt),
-    })),
+    subscribers: subscribers.map(s => {
+      const inv = s.invoices?.[0] ?? null
+      return {
+        ...s,
+        invoices: undefined,
+        amperage: Number(s.amperage),
+        total_debt: Number(s.total_debt),
+        current_invoice: inv ? {
+          id: inv.id,
+          billing_month: inv.billing_month,
+          billing_year: inv.billing_year,
+          total_amount_due: Number(inv.total_amount_due),
+          amount_paid: Number(inv.amount_paid),
+          is_fully_paid: inv.is_fully_paid,
+        } : null,
+      }
+    }),
     total,
     pages: Math.ceil(total / limit),
     page,
+    billing_month: currentBMonth,
+    billing_year: currentBYear,
   })
 }
 

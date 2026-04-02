@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
         where: { branch_id: { in: branchIds }, is_active: true },
       }).catch(e => { console.error('[dashboard] subscriber count:', e); return 0 }),
 
-      // 2. Monthly revenue (total_amount_due)
+      // 2. Monthly total due (total_amount_due for billing period)
       prisma.invoice.aggregate({
         _sum: { total_amount_due: true },
         where: {
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
           billing_month: billingMonth,
           billing_year: billingYear,
         },
-      }).catch(e => { console.error('[dashboard] monthlyRevenue:', e); return { _sum: { total_amount_due: null } } }),
+      }).catch(e => { console.error('[dashboard] monthlyTotalDue:', e); return { _sum: { total_amount_due: null } } }),
 
       // 3. Monthly collected (amount_paid)
       prisma.invoice.aggregate({
@@ -315,7 +315,7 @@ export async function GET(req: NextRequest) {
     const onlineNonInvoice = Number(onlinePaymentsAgg?._sum?.amount ?? 0)
     const deliveries = Number(monthlyDeliveries?._sum?.amount ?? 0)
     const totalDue = Number(monthlyRevenue?._sum?.total_amount_due ?? 0)
-    const revenue = collected + onlineNonInvoice // Invoice payments + direct online payments
+    const revenue = collected + onlineNonInvoice // Revenue = actual payments (not theoretical dues)
     const totalCollected = Number(totalCollectedAgg?._sum?.total_collected ?? 0)
 
     // Collection rate — null safe
