@@ -16,18 +16,33 @@ export async function GET(req: NextRequest) {
 
   try {
     // Get all staff with salary config
-    const staffList = await prisma.staff.findMany({
-      where: { tenant_id: tenantId, is_active: true, ...(branchId ? { branch_id: branchId } : {}) },
-      select: { id: true, name: true, role: true, salary_config: true },
-    })
+    let staffList: any[] = []
+    try {
+      staffList = await prisma.staff.findMany({
+        where: { tenant_id: tenantId, is_active: true, ...(branchId ? { branch_id: branchId } : {}) },
+        select: { id: true, name: true, role: true, salary_config: true },
+      })
+    } catch (e: any) {
+      console.log('Staff salary query failed:', e.message)
+      // Fallback: get staff without salary_config
+      const basic = await prisma.staff.findMany({
+        where: { tenant_id: tenantId, is_active: true, ...(branchId ? { branch_id: branchId } : {}) },
+        select: { id: true, name: true, role: true },
+      })
+      staffList = basic.map((s: any) => ({ ...s, salary_config: null }))
+    }
 
     // Get salary payments this month
-    const payments = await prisma.salaryPayment.findMany({
-      where: { tenant_id: tenantId, month, year },
-    })
     const paidMap = new Map<string, number>()
-    for (const p of payments) {
-      paidMap.set(p.staff_id, (paidMap.get(p.staff_id) || 0) + Number(p.amount))
+    try {
+      const payments = await prisma.salaryPayment.findMany({
+        where: { tenant_id: tenantId, month, year },
+      })
+      for (const p of payments) {
+        paidMap.set(p.staff_id, (paidMap.get(p.staff_id) || 0) + Number(p.amount))
+      }
+    } catch (e: any) {
+      console.log('salary_payments query failed:', e.message)
     }
 
     let totalAgreed = 0, totalPaid = 0
