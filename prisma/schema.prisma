@@ -360,6 +360,7 @@ model Subscriber {
   serial_number       String
   name                String
   phone               String?
+  whatsapp            String?
   address             String?
   alley               String?
   alley_id            String?

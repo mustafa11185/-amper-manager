@@ -89,7 +89,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const body = await req.json()
-    const { name, phone, address, alley, alley_id, governorate, amperage, subscription_type, is_active, gps_lat, gps_lng } = body
+    const { name, phone, whatsapp, address, alley, alley_id, governorate, amperage, subscription_type, is_active, gps_lat, gps_lng } = body
 
     // Get current subscriber to detect amperage/type changes
     const current = await prisma.subscriber.findUnique({ where: { id } })
@@ -100,6 +100,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       data: {
         ...(name !== undefined && { name }),
         ...(phone !== undefined && { phone }),
+        ...(whatsapp !== undefined && { whatsapp: whatsapp || null }),
         ...(address !== undefined && { address }),
         ...(alley !== undefined && { alley }),
         ...(alley_id !== undefined && { alley_id: alley_id || null }),
