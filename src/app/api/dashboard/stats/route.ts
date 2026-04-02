@@ -310,6 +310,13 @@ export async function GET(req: NextRequest) {
     const operatorsPresent = shiftsArray.filter(s => s.check_in_at !== null).length
     const operatorsTotal = shiftsArray.length
 
+    // Arabic month names
+    const ARABIC_MONTHS: Record<number, string> = {
+      1: 'يناير', 2: 'فبراير', 3: 'مارس', 4: 'أبريل',
+      5: 'مايو', 6: 'يونيو', 7: 'تموز', 8: 'آب',
+      9: 'أيلول', 10: 'تشرين الأول', 11: 'تشرين الثاني', 12: 'كانون الأول',
+    }
+
     // Financial calculations — null safe
     const collected = Number(monthlyCollected?._sum?.amount_paid ?? 0)
     const onlineNonInvoice = Number(onlinePaymentsAgg?._sum?.amount ?? 0)
@@ -365,8 +372,12 @@ export async function GET(req: NextRequest) {
       monthly_total_due: totalDue,
       monthly_collected: collected,
       monthly_deliveries: deliveries,
+      online_revenue: onlineNonInvoice,
       total_collected: totalCollected,
       collection_rate: collectionRate,
+      billing_month: billingMonth,
+      billing_year: billingYear,
+      billing_month_name: ARABIC_MONTHS[billingMonth] ?? '',
       total_debt: Number(totalDebtAgg?._sum?.total_debt ?? 0),
       unpaid_count: typeof unpaidCount === 'number' ? unpaidCount : 0,
       generator: firstGen ? {
