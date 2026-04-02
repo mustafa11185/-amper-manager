@@ -68,10 +68,6 @@ export async function POST(req: NextRequest) {
     if (salaryDeduct > 0) {
       try {
         const now = new Date()
-        const staff = await prisma.staff.findUnique({
-          where: { id: staff_id },
-          select: { salary: true },
-        })
         await prisma.salaryPayment.create({
           data: {
             staff_id,
@@ -80,10 +76,9 @@ export async function POST(req: NextRequest) {
             month: now.getMonth() + 1,
             year: now.getFullYear(),
             amount: salaryDeduct,
-            salary_type: staff?.salary?.salary_type || 'fixed',
-            paid_from_wallet: true,
+            paid_from_delivery: true,
             delivery_id: delivery.id,
-            notes: `خصم من استلام محفظة`,
+            notes: 'خصم من استلام محفظة',
           },
         })
       } catch (salaryErr: any) {

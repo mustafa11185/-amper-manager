@@ -10,14 +10,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
 
   try {
-    const salary = await prisma.staffSalary.findUnique({ where: { staff_id: id } })
+    const config = await prisma.staffSalaryConfig.findUnique({ where: { staff_id: id } })
+
+    // Also get paid this month
+    const now = new Date()
+    let paidThisMonth = 0
+    try {
+      const payments = await prisma.salaryPayment.aggregate({
+        _sum: { amount: true },
+        where: { staff_id: id, month: now.getMonth() + 1, year: now.getFullYear() },
+      })
+      paidThisMonth = Number(payments._sum.amount ?? 0)
+    } catch {}
+
     return NextResponse.json({
-      salary: salary ? {
-        salary_type: salary.salary_type,
-        fixed_amount: Number(salary.fixed_amount),
-        commission_rate: Number(salary.commission_rate),
-        effective_from: salary.effective_from,
-      } : null,
+      monthly_amount: config ? Number(config.monthly_amount) : 0,
+      notes: config?.notes ?? '',
+      paid_this_month: paidThisMonth,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
@@ -34,30 +43,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
 
   try {
-    const { salary_type, fixed_amount, commission_rate } = await req.json()
-
+    const { monthly_amount, notes } = await req.json()
     const staff = await prisma.staff.findUnique({ where: { id }, select: { branch_id: true, tenant_id: true } })
     if (!staff) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
-    const salary = await prisma.staffSalary.upsert({
+    await prisma.staffSalaryConfig.upsert({
       where: { staff_id: id },
-      create: {
-        staff_id: id,
-        tenant_id: staff.tenant_id,
-        branch_id: staff.branch_id,
-        salary_type: salary_type || 'fixed',
-        fixed_amount: Number(fixed_amount) || 0,
-        commission_rate: Number(commission_rate) || 0,
-      },
-      update: {
-        salary_type: salary_type || 'fixed',
-        fixed_amount: Number(fixed_amount) || 0,
-        commission_rate: Number(commission_rate) || 0,
-        effective_from: new Date(),
-      },
+      create: { staff_id: id, tenant_id: staff.tenant_id, branch_id: staff.branch_id, monthly_amount: Number(monthly_amount) || 0, notes: notes || null },
+      update: { monthly_amount: Number(monthly_amount) || 0, notes: notes || null },
     })
 
-    return NextResponse.json({ ok: true, salary })
+    return NextResponse.json({ ok: true })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
