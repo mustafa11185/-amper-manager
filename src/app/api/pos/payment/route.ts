@@ -12,11 +12,26 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { subscriber_id, amount, pay_type, billing_month, payment_method, gps_lat, gps_lng, discount_amount, discount_reason } = body
+    const { subscriber_id, amount, pay_type, billing_month, payment_method, gps_lat, gps_lng, discount_amount, discount_reason, client_uuid } = body
     // pay_type: 'invoice' | 'debt' | 'all' (default: 'invoice')
 
     if (!subscriber_id || !amount || amount <= 0) {
       return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+    }
+
+    // Dedup: check if this offline payment was already synced
+    if (client_uuid) {
+      try {
+        const existing = await prisma.invoice.findFirst({
+          where: { notes: { contains: client_uuid } },
+        })
+        if (existing) {
+          return NextResponse.json({
+            ok: true, duplicate: true,
+            subscriber_name: (await prisma.subscriber.findUnique({ where: { id: subscriber_id }, select: { name: true } }))?.name,
+          })
+        }
+      } catch {}
     }
 
     const selectedMonth = billing_month || (new Date().getMonth() + 1)
@@ -107,6 +122,7 @@ export async function POST(req: NextRequest) {
               payment_method,
               collector_id: user.role !== 'owner' ? user.id : null,
               received_by_owner: user.role === 'owner',
+              ...(client_uuid ? { notes: `offline:${client_uuid}` } : {}),
             },
           })
           invoicesUpdated++
