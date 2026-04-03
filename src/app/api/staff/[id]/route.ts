@@ -137,12 +137,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
-    await prisma.staff.update({
-      where: { id },
-      data: { is_active: false },
-    })
+    // Delete RESTRICT children first (CASCADE ones auto-delete)
+    await prisma.$executeRawUnsafe(`DELETE FROM pos_transactions WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM collector_daily_reports WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM collector_shifts WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM operator_shifts WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM operator_schedules WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM staff_gps_logs WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM staff_devices WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM collector_discount_requests WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM salary_payments WHERE staff_id = '${id}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM collector_wallets WHERE staff_id = '${id}'`);
+    // Now delete staff (CASCADE handles permissions, branch_access, salary_config)
+    await prisma.staff.delete({ where: { id } });
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'خطأ' }, { status: 500 })
+    console.error('Delete staff error:', err.message, err.code);
+    return NextResponse.json({ error: err.message || 'خطأ', code: err.code }, { status: 500 })
   }
 }
