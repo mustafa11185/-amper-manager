@@ -40,6 +40,20 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    // Notify owner about new discount request
+    try {
+      const sub = await prisma.subscriber.findUnique({ where: { id: subscriber_id }, select: { name: true } })
+      await prisma.notification.create({
+        data: {
+          branch_id: subscriber.branch_id, tenant_id: subscriber.tenant_id,
+          type: 'discount_request',
+          title: 'طلب خصم جديد 🏷️',
+          body: `${user.name || 'جابي'} يطلب خصم ${Number(amount).toLocaleString()} د.ع للمشترك ${sub?.name || ''}`,
+          payload: { discount_request_id: request.id, staff_id: user.id, staff_name: user.name, subscriber_id, amount },
+        },
+      })
+    } catch (_) {}
+
     return NextResponse.json({ request }, { status: 201 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'خطأ' }, { status: 500 })
