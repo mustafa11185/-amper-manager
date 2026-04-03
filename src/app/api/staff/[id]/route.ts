@@ -87,6 +87,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
+    // Upsert salary config if monthly_amount provided
+    if (body.monthly_amount !== undefined) {
+      await prisma.staffSalaryConfig.upsert({
+        where: { staff_id: id },
+        create: {
+          staff_id: id,
+          tenant_id: staff.tenant_id,
+          branch_id: staff.branch_id,
+          monthly_amount: body.monthly_amount,
+          notes: body.salary_notes || null,
+        },
+        update: {
+          monthly_amount: body.monthly_amount,
+          ...(body.salary_notes !== undefined && { notes: body.salary_notes }),
+        },
+      })
+    }
+
     // Ensure CollectorWallet exists if can_collect
     if (body.can_collect) {
       await prisma.collectorWallet.upsert({

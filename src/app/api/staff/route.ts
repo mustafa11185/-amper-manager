@@ -80,6 +80,19 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Create salary config if monthly_amount provided
+    if (body.monthly_amount && Number(body.monthly_amount) > 0) {
+      await prisma.staffSalaryConfig.create({
+        data: {
+          staff_id: staff.id,
+          tenant_id: tenantId,
+          branch_id,
+          monthly_amount: body.monthly_amount,
+          notes: body.salary_notes || null,
+        },
+      })
+    }
+
     return NextResponse.json({ staff }, { status: 201 })
   } catch (err: any) {
     if (err.code === 'P2002') {
