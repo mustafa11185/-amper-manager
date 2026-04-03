@@ -87,16 +87,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Notification
+    // Notification — get staff name
     try {
+      const staffRecord = await prisma.staff.findUnique({ where: { id: staff_id }, select: { name: true } })
+      const staffName = staffRecord?.name || 'الموظف'
       await prisma.notification.create({
         data: {
           branch_id: wallet.branch_id,
           tenant_id: wallet.tenant_id || '',
           type: 'wallet_delivery',
-          title: 'تم استلام مبلغ 💰',
-          body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظتك`,
-          payload: { staff_id, amount: deliverAmount, salary_deducted: salaryDeduct },
+          title: 'استلام من محفظة 💰',
+          body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظة ${staffName}`,
+          payload: { staff_id, staff_name: staffName, amount: deliverAmount, salary_deducted: salaryDeduct },
         },
       })
       const push = pushTemplates.walletReceived(deliverAmount)
