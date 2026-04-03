@@ -183,6 +183,19 @@ export async function POST(req: NextRequest) {
       sendPushToBranch({ branch_id, ...push, roles: ['collector'] }).catch(() => {})
     } catch (_) {}
 
+    // Create notification record
+    try {
+      await prisma.notification.create({
+        data: {
+          branch_id, tenant_id: tenantId,
+          type: 'invoice_generated',
+          title: 'تم إصدار الفواتير 📋',
+          body: `تم إصدار ${totalCreated} فاتورة لشهر ${billingMonth}/${billingYear}`,
+          payload: { generated: totalCreated, billing_month: billingMonth, billing_year: billingYear },
+        },
+      })
+    } catch (_) {}
+
     return NextResponse.json({
       ok: true,
       generated: totalCreated,

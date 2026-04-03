@@ -174,6 +174,30 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      // Check wallet threshold — notify owner if > 50,000
+      if (user.role !== 'owner') {
+        try {
+          const wallet = await tx.collectorWallet.findUnique({ where: { staff_id: user.id as string } })
+          if (wallet && Number(wallet.balance) > 50000) {
+            const existing = await tx.notification.findFirst({
+              where: { tenant_id: subscriber.tenant_id, type: 'wallet_threshold',
+                created_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+            })
+            if (!existing) {
+              await tx.notification.create({
+                data: {
+                  branch_id: subscriber.branch_id, tenant_id: subscriber.tenant_id,
+                  type: 'wallet_threshold',
+                  title: 'تنبيه محفظة ⚠️',
+                  body: `محفظة ${user.name || 'الجابي'} وصلت ${Number(wallet.balance).toLocaleString()} د.ع — يُنصح بالاستلام`,
+                  payload: { staff_id: user.id, staff_name: user.name, balance: Number(wallet.balance) },
+                },
+              })
+            }
+          }
+        } catch (_) {}
+      }
+
       // Create GPS log for non-owner roles
       if (gps_lat && gps_lng && user.role !== 'owner') {
         const staffId = user.id as string

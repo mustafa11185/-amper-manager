@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
 
     const staff = await prisma.staff.findUnique({
       where: { id: staff_id },
-      select: { branch_id: true, tenant_id: true },
+      select: { branch_id: true, tenant_id: true, name: true },
     })
     if (!staff) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
@@ -39,6 +39,19 @@ export async function POST(req: NextRequest) {
         notes: notes || null,
       },
     })
+
+    // Notification
+    try {
+      await prisma.notification.create({
+        data: {
+          branch_id: staff.branch_id, tenant_id: staff.tenant_id,
+          type: 'salary_paid',
+          title: 'راتب مدفوع 💰',
+          body: `تم دفع راتب ${staff.name}: ${Number(amount).toLocaleString()} د.ع`,
+          payload: { staff_id, staff_name: staff.name, amount },
+        },
+      })
+    } catch (_) {}
 
     return NextResponse.json({ ok: true, payment_id: payment.id })
   } catch (e: any) {
