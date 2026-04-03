@@ -55,7 +55,15 @@ export async function GET(req: NextRequest) {
       _sum: { amount: true },
     })
     const otherExpenses = Number(expenseAgg._sum.amount || 0)
-    const totalExpenses = salaries + tips + otherExpenses
+
+    // Approved collector discounts
+    const discountAgg = await prisma.collectorDiscountRequest.aggregate({
+      where: { tenant_id: tenantId, status: 'approved', created_at: { gte: monthStart, lt: monthEnd } },
+      _sum: { amount: true },
+    })
+    const approvedDiscounts = Number(discountAgg._sum.amount || 0)
+
+    const totalExpenses = salaries + tips + otherExpenses + approvedDiscounts
 
     // Staff wallets
     const wallets = await prisma.collectorWallet.findMany({ where })
@@ -118,7 +126,7 @@ export async function GET(req: NextRequest) {
       collection_rate: totalDue > 0 ? Math.round((totalCollected / totalDue) * 100) : 0,
       subscribers_count: subsCount,
       unpaid_count: unpaidCount,
-      expenses: { salaries, tips, other: otherExpenses, total: totalExpenses },
+      expenses: { salaries, tips, discounts: approvedDiscounts, other: otherExpenses, total: totalExpenses },
       net_profit: totalCollected - totalExpenses,
       staff_wallets: staffWallets,
       previous_month: { total_collected: prevCollected, net_profit: prevNet, growth_percent: growthPercent },
