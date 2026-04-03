@@ -47,45 +47,78 @@ export async function POST(req: NextRequest) {
       let invoicesUpdated = 0
       let debtReduced = 0
 
-      // ── OWNER DISCOUNT: apply directly if owner/accountant ──
+      // ── DISCOUNT HANDLING ──
       const disc = Number(discount_amount) || 0
-      if (disc > 0 && (user.role === 'owner' || user.role === 'accountant')) {
-        // Find target invoice and apply discount
-        const targetInv = await tx.invoice.findFirst({
-          where: { subscriber_id, is_fully_paid: false },
-          orderBy: [{ billing_year: 'asc' }, { billing_month: 'asc' }],
-        })
-        if (targetInv) {
-          const baseAmt = Number(targetInv.base_amount)
-          const currentDisc = Number(targetInv.discount_amount)
-          const newDisc = currentDisc + disc
-          await tx.invoice.update({
-            where: { id: targetInv.id },
+      if (disc > 0) {
+        const isOwner = user.role === 'owner' || user.role === 'accountant'
+
+        if (isOwner) {
+          // Owner/accountant → apply discount directly to invoice
+          const targetInv = await tx.invoice.findFirst({
+            where: { subscriber_id, is_fully_paid: false },
+            orderBy: [{ billing_year: 'asc' }, { billing_month: 'asc' }],
+          })
+          if (targetInv) {
+            const baseAmt = Number(targetInv.base_amount)
+            const currentDisc = Number(targetInv.discount_amount)
+            const newDisc = currentDisc + disc
+            await tx.invoice.update({
+              where: { id: targetInv.id },
+              data: {
+                discount_amount: newDisc,
+                discount_type: 'fixed',
+                discount_reason: discount_reason || 'خصم من المالك',
+                total_amount_due: Math.max(0, baseAmt - newDisc),
+              },
+            })
+          }
+          await tx.subscriberDiscount.create({
             data: {
-              discount_amount: newDisc,
-              discount_type: 'fixed',
-              discount_reason: discount_reason || 'خصم من المالك',
-              total_amount_due: Math.max(0, baseAmt - newDisc),
+              subscriber_id, branch_id: subscriber.branch_id, tenant_id: subscriber.tenant_id,
+              discount_type: 'fixed', discount_value: disc,
+              reason: discount_reason || 'خصم من المالك', is_active: true, applied_by: user.id ?? 'owner',
+            },
+          })
+          await tx.auditLog.create({
+            data: {
+              tenant_id: subscriber.tenant_id, branch_id: subscriber.branch_id,
+              actor_id: user.id, actor_type: user.role, action: 'owner_discount',
+              entity_type: 'subscriber', entity_id: subscriber_id,
+              new_value: { discount_amount: disc, reason: discount_reason },
+            },
+          })
+        } else {
+          // Collector → create pending discount request (payment proceeds at full amount)
+          const discRequest = await tx.collectorDiscountRequest.create({
+            data: {
+              tenant_id: subscriber.tenant_id,
+              branch_id: subscriber.branch_id,
+              staff_id: user.id,
+              subscriber_id,
+              amount: disc,
+              reason: discount_reason || '',
+              status: 'pending',
+              expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            },
+          })
+          // Notify owner about pending discount request
+          await tx.notification.create({
+            data: {
+              branch_id: subscriber.branch_id,
+              tenant_id: subscriber.tenant_id,
+              type: 'discount_request',
+              title: 'طلب خصم جديد 🏷️',
+              body: `${user.name || 'جابي'} يطلب خصم ${disc.toLocaleString()} د.ع للمشترك ${subscriber.name}`,
+              payload: {
+                discount_request_id: discRequest.id,
+                staff_id: user.id,
+                staff_name: user.name,
+                subscriber_id,
+                amount: disc,
+              },
             },
           })
         }
-        // Create SubscriberDiscount record
-        await tx.subscriberDiscount.create({
-          data: {
-            subscriber_id, branch_id: subscriber.branch_id, tenant_id: subscriber.tenant_id,
-            discount_type: 'fixed', discount_value: disc,
-            reason: discount_reason || 'خصم من المالك', is_active: true, applied_by: user.id ?? 'owner',
-          },
-        })
-        // Audit log
-        await tx.auditLog.create({
-          data: {
-            tenant_id: subscriber.tenant_id, branch_id: subscriber.branch_id,
-            actor_id: user.id, actor_type: user.role, action: 'owner_discount',
-            entity_type: 'subscriber', entity_id: subscriber_id,
-            new_value: { discount_amount: disc, reason: discount_reason },
-          },
-        })
       }
 
       // ── INVOICE payment: distribute to invoices ──
