@@ -13,12 +13,16 @@ export async function GET(req: NextRequest) {
   const tenantId = user.tenantId
 
   try {
-    const branchId = user.branchId as string | undefined
+    // Support branch_id query param for owner filtering
+    const queryBranchId = req.nextUrl.searchParams.get('branch_id')
+    const branchId = queryBranchId || (user.branchId as string | undefined)
 
     // Get branches for this tenant (owner sees all, staff sees own branch)
-    const branchFilter = user.role === 'owner'
-      ? { tenant_id: tenantId }
-      : { id: branchId }
+    const branchFilter = queryBranchId
+      ? { id: queryBranchId, tenant_id: tenantId }
+      : user.role === 'owner'
+        ? { tenant_id: tenantId }
+        : { id: branchId }
 
     const branches = await prisma.branch.findMany({
       where: branchFilter,
