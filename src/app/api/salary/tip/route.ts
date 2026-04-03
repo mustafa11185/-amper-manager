@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { staff_id, amount, month, year, paid_from_delivery, delivery_id, notes } = await req.json()
+    const { staff_id, amount, notes } = await req.json()
 
     if (!staff_id || !amount || amount <= 0) {
       return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
@@ -21,22 +21,22 @@ export async function POST(req: NextRequest) {
 
     const staff = await prisma.staff.findUnique({
       where: { id: staff_id },
-      select: { branch_id: true, tenant_id: true },
+      select: { branch_id: true, tenant_id: true, name: true },
     })
     if (!staff) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
+    const now = new Date()
     const payment = await prisma.salaryPayment.create({
       data: {
         staff_id,
         tenant_id: staff.tenant_id,
         branch_id: staff.branch_id,
-        month: month || new Date().getMonth() + 1,
-        year: year || new Date().getFullYear(),
+        month: now.getMonth() + 1,
+        year: now.getFullYear(),
         amount,
-        payment_type: 'salary',
-        paid_from_delivery: paid_from_delivery || false,
-        delivery_id: delivery_id || null,
-        notes: notes || null,
+        payment_type: 'tip',
+        tip_notes: notes || null,
+        notes: `إكرامية من ${(user as any).name || 'المدير'}`,
       },
     })
 

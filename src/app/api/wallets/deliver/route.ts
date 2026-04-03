@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
             month: now.getMonth() + 1,
             year: now.getFullYear(),
             amount: salaryDeduct,
+            payment_type: 'salary',
             paid_from_delivery: true,
             delivery_id: delivery.id,
             notes: 'خصم من استلام محفظة',
