@@ -94,8 +94,9 @@ export async function POST(req: NextRequest) {
           branch_id: wallet.branch_id,
           tenant_id: wallet.tenant_id || '',
           type: 'wallet_delivery',
-          title: 'تم استلام مبلغ',
+          title: 'تم استلام مبلغ 💰',
           body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظتك`,
+          payload: { staff_id, amount: deliverAmount, salary_deducted: salaryDeduct },
         },
       })
       const push = pushTemplates.walletReceived(deliverAmount)

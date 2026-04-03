@@ -195,17 +195,19 @@ export async function POST(req: NextRequest) {
         select: { total_debt: true },
       })
 
-      // Create payment notification
-      const collectorName = user.role !== 'owner' ? (user.name || 'موظف') : 'المالك'
-      await tx.notification.create({
-        data: {
-          branch_id: subscriber.branch_id,
-          tenant_id: subscriber.tenant_id,
-          type: 'payment',
-          title: 'دفعة جديدة',
-          body: `تم استلام ${amount.toLocaleString()} د.ع من ${subscriber.name} بواسطة ${collectorName}`,
-        },
-      })
+      // Create payment notification (skip if owner paying themselves)
+      if (user.role !== 'owner') {
+        await tx.notification.create({
+          data: {
+            branch_id: subscriber.branch_id,
+            tenant_id: subscriber.tenant_id,
+            type: 'payment',
+            title: 'دفعة جديدة 💰',
+            body: `${user.name || 'جابي'} استلم ${amount.toLocaleString()} د.ع من ${subscriber.name}`,
+            payload: { subscriber_id, subscriber_name: subscriber.name, staff_id: user.id, staff_name: user.name, amount },
+          },
+        })
+      }
 
       return {
         paid: amount,
