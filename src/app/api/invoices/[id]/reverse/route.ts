@@ -74,7 +74,7 @@ export async function POST(
           tenant_id: invoice.tenant_id,
           branch_id: invoice.branch_id,
           actor_id: user.id ?? null,
-          actor_type: "owner",
+          actor_type: user.role,
           action: "payment_reversed",
           entity_type: "invoice",
           entity_id: id,
