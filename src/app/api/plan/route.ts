@@ -5,9 +5,9 @@ import { prisma } from '@/lib/prisma'
 
 const PLAN_LIMITS: Record<string, any> = {
   starter:   { max_subscribers: 25,    max_staff: 1,   max_branches: 1,  online_payment: false, financial_reports: false, custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 0 },
-  pro:       { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 25000 },
-  business:  { max_subscribers: 300,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 40000 },
-  corporate: { max_subscribers: 1000,  max_staff: 25,  max_branches: 15, online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 75000 },
+  pro:       { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 20000 },
+  business:  { max_subscribers: 300,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 30000 },
+  corporate: { max_subscribers: 1000,  max_staff: 25,  max_branches: 15, online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 50000 },
   fleet:     { max_subscribers: 99999, max_staff: 999, max_branches: 999,online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: true,  price_iqd: 0 },
 }
 
