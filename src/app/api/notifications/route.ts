@@ -28,6 +28,18 @@ export async function GET(req: NextRequest) {
     branch_id: { in: branchIds },
   }
 
+  // الموظف يرى فقط الإشعارات المتعلقة به
+  if (user.role !== 'owner' && user.role !== 'manager') {
+    where.type = { in: [
+      'discount_approved',
+      'discount_rejected',
+      'announcement_to_staff',
+      'shift_reminder',
+      'salary_ready',
+      'task_assigned',
+    ]}
+  }
+
   if (typeFilter && typeFilter !== 'all') {
     if (typeFilter === 'alert') {
       where.type = { in: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline'] }
