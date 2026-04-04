@@ -231,13 +231,12 @@ export async function POST(req: NextRequest) {
     // Auto-generate access code
     try {
       const branch = await prisma.branch.findUnique({ where: { id: branch_id } })
-      const code = generateAccessCode(
-        branch?.province_key ?? 'baghdad',
-        branch?.district_key ?? '01',
-        seq,
-        generatePrivacyCode()
-      )
-      await prisma.subscriber.update({ where: { id: subscriber.id }, data: { access_code: code } })
+      const provKey = branch?.province_key || 'baghdad'
+      const distKey = branch?.district_key || '01'
+      const code = generateAccessCode(provKey, distKey, seq, generatePrivacyCode())
+      if (code) {
+        await prisma.subscriber.update({ where: { id: subscriber.id }, data: { access_code: code } })
+      }
     } catch (e) { console.error('[subscribers] access code generation failed:', e) }
 
     // Auto-create invoice for active billing month
