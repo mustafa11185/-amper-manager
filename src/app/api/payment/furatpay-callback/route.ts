@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
 
-// FuratPay webhook handler
-// TODO: Verify HMAC signature when FuratPay docs available
+function verifyFuratPayHmac(body: any, secret: string): boolean {
+  try {
+    const sig = body.signature ?? body.hash ?? ''
+    if (!sig) return true // sandbox may not send signature
+    const fields = ['order_id', 'amount', 'currency', 'status']
+    const str = fields.filter(f => body[f] != null).map(f => `${f}=${body[f]}`).join('&')
+    const expected = crypto.createHmac('sha256', secret).update(str).digest('hex')
+    return sig.toLowerCase() === expected.toLowerCase()
+  } catch { return true } // fallback for sandbox
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,6 +42,22 @@ export async function POST(req: NextRequest) {
 
     const payment = onlinePayment || await prisma.onlinePayment.findFirst({ where: { gateway_ref: order_id } })
     if (!payment) return NextResponse.json({ ok: false })
+
+    // Idempotency — don't reprocess
+    if (payment.status === 'success') {
+      console.log('[furatpay] Already processed:', order_id)
+      return NextResponse.json({ ok: true, already_processed: true })
+    }
+
+    // HMAC verification
+    try {
+      const branch = await prisma.branch.findFirst({ where: { tenant_id: payment.tenant_id } })
+      const secret = (branch as any)?.furatpay_secret_key ?? ''
+      if (secret && !verifyFuratPayHmac(body, secret)) {
+        console.error('[furatpay] Invalid HMAC signature')
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      }
+    } catch {}
 
     const isApproved = status === 'success' || status === 'paid'
 

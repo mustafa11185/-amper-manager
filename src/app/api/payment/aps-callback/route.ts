@@ -21,6 +21,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false })
     }
 
+    // Idempotency
+    if (onlinePayment.status === 'success') {
+      console.log('[aps] Already processed:', merchant_reference)
+      return NextResponse.json({ ok: true, already_processed: true })
+    }
+
     // Verify signature if branch has SHA response phrase
     if (onlinePayment.invoice_id) {
       const invoice = await prisma.invoice.findUnique({ where: { id: onlinePayment.invoice_id } })

@@ -63,6 +63,15 @@ export async function GET(req: NextRequest) {
     })
     const approvedDiscounts = Number(discountAgg._sum.amount || 0)
 
+    // Online payments
+    const onlineAgg = await prisma.onlinePayment.aggregate({
+      where: { tenant_id: tenantId, status: 'success', created_at: { gte: monthStart, lt: monthEnd } },
+      _sum: { amount: true },
+      _count: true,
+    })
+    const onlineTotal = Number(onlineAgg._sum.amount || 0)
+    const onlineCount = onlineAgg._count || 0
+
     const totalExpenses = salaries + tips + otherExpenses + approvedDiscounts
 
     // Staff wallets
@@ -126,6 +135,7 @@ export async function GET(req: NextRequest) {
       collection_rate: totalDue > 0 ? Math.round((totalCollected / totalDue) * 100) : 0,
       subscribers_count: subsCount,
       unpaid_count: unpaidCount,
+      online_payments: { count: onlineCount, total: onlineTotal },
       expenses: { salaries, tips, discounts: approvedDiscounts, other: otherExpenses, total: totalExpenses },
       net_profit: totalCollected - totalExpenses,
       staff_wallets: staffWallets,
