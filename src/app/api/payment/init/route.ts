@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const { subscriber_id, invoice_id, amount } = await req.json()
+    const { subscriber_id, invoice_id, amount, payment_method } = await req.json()
     if (!subscriber_id || !amount || amount <= 0) {
       return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
     }
@@ -21,6 +21,23 @@ export async function POST(req: NextRequest) {
     if (!subscriber) return NextResponse.json({ error: 'المشترك غير موجود' }, { status: 404 })
 
     const branch = subscriber.branch
+
+    // ZainCash — manual flow, no gateway needed
+    if (payment_method === 'zaincash') {
+      await prisma.onlinePayment.create({
+        data: {
+          subscriber_id, tenant_id: subscriber.tenant_id,
+          invoice_id: invoice_id || null, amount,
+          gateway: 'zaincash', gateway_ref: `ZC-${Date.now()}`, status: 'pending',
+        },
+      })
+      return NextResponse.json({
+        zaincash: true, payment_url: null,
+        merchant_phone: (branch as any).zaincash_phone ?? '',
+        amount,
+      })
+    }
+
     if (!branch.is_online_payment_enabled || branch.active_gateway === 'none') {
       return NextResponse.json({ error: 'لم يتم إعداد الدفع الإلكتروني' }, { status: 400 })
     }
