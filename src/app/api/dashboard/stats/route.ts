@@ -447,6 +447,17 @@ export async function GET(req: NextRequest) {
         load: latestLoadLog,
         runtime_hours: firstEngine ? { current: Number(firstEngine.runtime_hours ?? 0), max: firstEngine.oil_change_hours ?? 250 } : null,
       },
+      plan: await (async () => {
+        try {
+          const plans = await prisma.$queryRaw`
+            SELECT plan_name, max_subscribers, max_staff, max_branches,
+              online_payment, financial_reports, custom_app, announcements,
+              expires_at, is_active
+            FROM tenant_plans WHERE tenant_id = ${tenantId} LIMIT 1
+          ` as any[]
+          return plans[0] ?? { plan_name: 'starter' }
+        } catch { return { plan_name: 'starter' } }
+      })(),
     })
   } catch (error) {
     console.error('[dashboard] FATAL stats error:', error)
