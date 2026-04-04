@@ -36,7 +36,27 @@ export const authOptions: NextAuthOptions = {
             include: { branch: true, collector_permission: true }
           })
           if (!staff) return null
-          if (staff.pin !== credentials.password) return null
+
+          // Check if account is locked
+          if ((staff as any).locked_until && new Date((staff as any).locked_until) > new Date()) {
+            const remaining = Math.ceil((new Date((staff as any).locked_until).getTime() - Date.now()) / 60000)
+            throw new Error(`الحساب مقفل لمدة ${remaining} دقيقة`)
+          }
+
+          if (staff.pin !== credentials.password) {
+            // Increment login_attempts, lock after 5 failures
+            await prisma.$executeRawUnsafe(
+              `UPDATE staff SET login_attempts = COALESCE(login_attempts, 0) + 1,
+               locked_until = CASE WHEN COALESCE(login_attempts, 0) + 1 >= 5
+                 THEN NOW() + INTERVAL '15 minutes' ELSE locked_until END
+               WHERE id = $1`, staff.id)
+            return null
+          }
+
+          // Success — reset attempts + update last_login
+          await prisma.$executeRawUnsafe(
+            `UPDATE staff SET login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1`, staff.id)
+
           // Allow all staff roles (collector, operator, accountant, cashier)
           const cp = (staff as any).collector_permission
           return {
