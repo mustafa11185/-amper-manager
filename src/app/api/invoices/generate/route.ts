@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  if (user.role !== 'owner') {
+  if (user.role !== 'owner' && user.role !== 'manager') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -46,8 +46,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'يجب تحديد سعر الأمبير أولاً' }, { status: 400 })
     }
 
-    const billingMonth = new Date(pricing.effective_from).getMonth() + 1
-    const billingYear = new Date(pricing.effective_from).getFullYear()
+    const now = new Date()
+    const billingMonth = now.getMonth() + 1
+    const billingYear = now.getFullYear()
 
     if (!billingMonth || !billingYear) {
       return NextResponse.json({ error: 'يجب تحديد الشهر المستحق أولاً' }, { status: 400 })
