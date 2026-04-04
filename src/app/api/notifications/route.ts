@@ -26,29 +26,32 @@ export async function GET(req: NextRequest) {
 
   const where: any = {
     branch_id: { in: branchIds },
+    AND: [] as any[],
   }
 
   // الموظف يرى فقط الإشعارات المتعلقة به
   if (user.role !== 'owner' && user.role !== 'manager') {
-    where.type = { in: [
+    where.AND.push({ type: { in: [
       'discount_approved',
       'discount_rejected',
       'announcement_to_staff',
       'shift_reminder',
       'salary_ready',
       'task_assigned',
-    ]}
+    ]}})
   }
 
   if (typeFilter && typeFilter !== 'all') {
     if (typeFilter === 'alert') {
-      where.type = { in: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline'] }
+      where.AND.push({ type: { in: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline'] }})
     } else if (typeFilter === 'warning') {
-      where.type = { in: ['temp_warning', 'fuel_warning', 'oil_change_due'] }
+      where.AND.push({ type: { in: ['temp_warning', 'fuel_warning', 'oil_change_due'] }})
     } else if (typeFilter === 'info') {
-      where.type = { notIn: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline', 'oil_change_due'] }
+      where.AND.push({ type: { notIn: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline', 'oil_change_due'] }})
     }
   }
+
+  if (where.AND.length === 0) delete where.AND
 
   const notifications = await prisma.notification.findMany({
     where,
