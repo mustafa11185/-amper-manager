@@ -197,6 +197,38 @@ export async function POST(req: NextRequest) {
       })
     } catch (_) {}
 
+    // ═══ تصفير دورة جديدة ═══
+    // Non-critical cleanup — failures here don't break the generation
+
+    // 1. إغلاق الخصومات العامة المنتهية
+    try {
+      await prisma.$executeRaw`
+        UPDATE subscriber_discounts SET
+          is_active = false,
+          updated_at = NOW()
+        WHERE tenant_id = ${tenantId}::uuid
+          AND is_active = true
+          AND valid_until IS NOT NULL
+          AND valid_until < NOW()
+      `
+    } catch (e: any) {
+      console.log('Cycle reset (discounts) failed:', e.message)
+    }
+
+    // 2. إنهاء طلبات خصم الجابي المعلقة (expired)
+    try {
+      await prisma.$executeRaw`
+        UPDATE collector_discount_requests SET
+          status = 'expired',
+          decided_at = NOW(),
+          decision_note = 'انتهت تلقائياً عند إصدار دورة جديدة'
+        WHERE tenant_id = ${tenantId}::uuid
+          AND status = 'pending'
+      `
+    } catch (e: any) {
+      console.log('Cycle reset (discount requests) failed:', e.message)
+    }
+
     return NextResponse.json({
       ok: true,
       generated: totalCreated,
