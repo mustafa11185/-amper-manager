@@ -8,7 +8,15 @@ const PLAN_LIMITS: Record<string, any> = {
   pro:       { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 20000 },
   business:  { max_subscribers: 300,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 30000 },
   corporate: { max_subscribers: 1000,  max_staff: 25,  max_branches: 15, online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 50000 },
-  fleet:     { max_subscribers: 99999, max_staff: 999, max_branches: 999,online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: true,  price_iqd: 0 },
+  fleet:     { max_subscribers: 99999, max_staff: 9999,max_branches: 9999,online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: true,  price_iqd: 0 },
+  // Old plan mappings
+  trial:     { max_subscribers: 25,    max_staff: 1,   max_branches: 1,  online_payment: false, financial_reports: false, custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 0 },
+  basic:     { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 15000 },
+  gold:      { max_subscribers: 400,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
+}
+
+const PLAN_NAME_MAP: Record<string, string> = {
+  trial: 'starter', basic: 'pro', gold: 'business',
 }
 
 export async function GET() {
@@ -16,24 +24,46 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  const plans = await prisma.$queryRaw`
-    SELECT * FROM tenant_plans WHERE tenant_id = ${user.tenantId} LIMIT 1
-  ` as any[]
+  const tenantId = user.tenantId
 
-  const plan = plans[0] ?? { plan_name: 'starter' }
-  const limits = PLAN_LIMITS[plan.plan_name] ?? PLAN_LIMITS.starter
+  try {
+    // Read from tenants.plan (admin source of truth)
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { plan: true },
+    })
+    const rawPlan = tenant?.plan ?? 'starter'
+    const planName = PLAN_NAME_MAP[rawPlan] ?? rawPlan
+    const limits = PLAN_LIMITS[planName] ?? PLAN_LIMITS.starter
 
-  return NextResponse.json({
-    plan_name: plan.plan_name,
-    expires_at: plan.expires_at,
-    is_active: plan.is_active ?? true,
-    limits: {
-      ...limits,
-      max_subscribers: plan.max_subscribers ?? limits.max_subscribers,
-      max_staff: plan.max_staff ?? limits.max_staff,
-      max_branches: plan.max_branches ?? limits.max_branches,
-    },
-  })
+    // Check tenant_plans for overrides
+    const overrides = await prisma.$queryRaw`
+      SELECT * FROM tenant_plans WHERE tenant_id = ${tenantId} LIMIT 1
+    ` as any[]
+    const ov = overrides[0]
+
+    return NextResponse.json({
+      plan_name: planName,
+      original_plan: rawPlan,
+      expires_at: ov?.expires_at ?? null,
+      is_active: ov?.is_active ?? true,
+      limits: {
+        max_subscribers: ov?.max_subscribers ?? limits.max_subscribers,
+        max_staff: ov?.max_staff ?? limits.max_staff,
+        max_branches: ov?.max_branches ?? limits.max_branches,
+        online_payment: ov?.online_payment ?? limits.online_payment,
+        financial_reports: ov?.financial_reports ?? limits.financial_reports,
+        custom_app: ov?.custom_app ?? limits.custom_app,
+        announcements: ov?.announcements ?? limits.announcements,
+        advanced_reports: ov?.advanced_reports ?? limits.advanced_reports,
+        api_access: ov?.api_access ?? limits.api_access,
+        white_label: ov?.white_label ?? limits.white_label,
+        price_iqd: limits.price_iqd,
+      },
+    })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
 }
 
 export async function PUT(req: NextRequest) {
@@ -41,28 +71,30 @@ export async function PUT(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  const { plan_name, expires_at } = await req.json()
+  const { plan_name } = await req.json()
   if (!PLAN_LIMITS[plan_name]) return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
 
   const l = PLAN_LIMITS[plan_name]
-  const exp = expires_at ? new Date(expires_at) : null
 
+  // Update tenants.plan
+  await prisma.tenant.update({ where: { id: user.tenantId }, data: { plan: plan_name } })
+
+  // Update tenant_plans
   await prisma.$executeRaw`
     INSERT INTO tenant_plans (tenant_id, plan_name, max_subscribers, max_staff, max_branches,
       online_payment, financial_reports, custom_app, announcements,
-      advanced_reports, api_access, white_label, price_iqd, expires_at, updated_at)
+      advanced_reports, api_access, white_label, price_iqd, updated_at)
     VALUES (${user.tenantId}, ${plan_name}, ${l.max_subscribers}, ${l.max_staff}, ${l.max_branches},
       ${l.online_payment}, ${l.financial_reports}, ${l.custom_app}, ${l.announcements},
-      ${l.advanced_reports}, ${l.api_access}, ${l.white_label}, ${l.price_iqd}, ${exp}, NOW())
+      ${l.advanced_reports}, ${l.api_access}, ${l.white_label}, ${l.price_iqd}, NOW())
     ON CONFLICT (tenant_id) DO UPDATE SET
       plan_name = EXCLUDED.plan_name, max_subscribers = EXCLUDED.max_subscribers,
       max_staff = EXCLUDED.max_staff, max_branches = EXCLUDED.max_branches,
       online_payment = EXCLUDED.online_payment, financial_reports = EXCLUDED.financial_reports,
       custom_app = EXCLUDED.custom_app, announcements = EXCLUDED.announcements,
       advanced_reports = EXCLUDED.advanced_reports, api_access = EXCLUDED.api_access,
-      white_label = EXCLUDED.white_label, price_iqd = EXCLUDED.price_iqd,
-      expires_at = EXCLUDED.expires_at, updated_at = NOW()
+      white_label = EXCLUDED.white_label, price_iqd = EXCLUDED.price_iqd, updated_at = NOW()
   `
 
-  return NextResponse.json({ ok: true, plan_name, limits: l })
+  return NextResponse.json({ ok: true, plan_name })
 }
