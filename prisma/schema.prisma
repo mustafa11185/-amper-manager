@@ -255,6 +255,7 @@ model Branch {
   aps_is_sandbox            Boolean  @default(true)
   aps_enabled               Boolean  @default(false)
   active_gateway            String   @default("none")
+  zaincash_phone            String?
   is_online_payment_enabled Boolean  @default(false)
   is_active    Boolean  @default(true)
   created_at   DateTime @default(now())

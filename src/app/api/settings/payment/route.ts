@@ -23,6 +23,7 @@ export async function GET() {
       aps_is_sandbox: true,
       aps_enabled: true,
       active_gateway: true,
+      zaincash_phone: true,
     },
   })
 
@@ -47,6 +48,7 @@ export async function GET() {
     aps_is_sandbox: branch.aps_is_sandbox,
     aps_enabled: branch.aps_enabled,
     active_gateway: branch.active_gateway,
+    zaincash_phone: (branch as any).zaincash_phone ?? '',
   })
 }
 
@@ -63,6 +65,7 @@ export async function PUT(req: NextRequest) {
       furatpay_merchant_id, furatpay_api_key, furatpay_secret_key, furatpay_is_sandbox,
       aps_merchant_id, aps_access_code, aps_sha_request_phrase, aps_sha_response_phrase, aps_is_sandbox,
       active_gateway,
+      zaincash_phone,
     } = body
 
     const branch = await prisma.branch.findFirst({
@@ -79,6 +82,7 @@ export async function PUT(req: NextRequest) {
       aps_is_sandbox: aps_is_sandbox ?? true,
       active_gateway: gateway,
       is_online_payment_enabled: gateway !== 'none',
+      zaincash_phone: zaincash_phone || null,
     }
 
     // Set aps_enabled based on active_gateway
