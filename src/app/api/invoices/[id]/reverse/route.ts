@@ -13,7 +13,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const user = session.user as any;
-    if (user.role !== "owner") {
+    if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json({ error: "المالك فقط" }, { status: 403 });
     }
 
