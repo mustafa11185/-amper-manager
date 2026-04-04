@@ -41,6 +41,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.can_collect !== undefined) staffData.can_collect = body.can_collect
     if (body.can_operate !== undefined) staffData.can_operate = body.can_operate
     if (body.is_owner_acting !== undefined) staffData.is_owner_acting = body.is_owner_acting
+    if (body.can_send_announcements !== undefined) staffData.can_send_announcements = body.can_send_announcements
+    if (body.can_send_urgent !== undefined) staffData.can_send_urgent = body.can_send_urgent
 
     const staff = await prisma.staff.update({
       where: { id },
