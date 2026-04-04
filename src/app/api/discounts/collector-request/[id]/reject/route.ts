@@ -7,7 +7,7 @@ import { sendPushNotification, pushTemplates } from '@/lib/push'
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if ((session.user as any).role !== 'owner') return NextResponse.json({ error: 'غير مصرح' }, { status: 403 })
+  if ((session.user as any).role !== 'owner' && (session.user as any).role !== 'manager') return NextResponse.json({ error: 'غير مصرح' }, { status: 403 })
 
   const { id } = await params
 
@@ -17,6 +17,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       include: { subscriber: { select: { name: true } }, staff: { select: { name: true } } },
     })
     if (!request) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+    if (request.status !== 'pending') {
+      return NextResponse.json({ error: 'الطلب معالج مسبقاً' }, { status: 400 })
+    }
 
     const updated = await prisma.collectorDiscountRequest.update({
       where: { id },
