@@ -89,6 +89,7 @@ export async function GET(req: NextRequest) {
       ownerActingCollector,
       onlinePaymentsAgg,
       totalCollectedAgg,
+      monthlyExpensesAgg,
     ] = await Promise.all([
       // 1. Total active subscribers
       prisma.subscriber.count({
@@ -263,6 +264,15 @@ export async function GET(req: NextRequest) {
         _sum: { total_collected: true },
         where: { branch_id: { in: branchIds } },
       }).catch(e => { console.error('[dashboard] totalCollected:', e); return { _sum: { total_collected: null } } }),
+
+      // 19. Monthly expenses
+      prisma.expense.aggregate({
+        _sum: { amount: true },
+        where: {
+          branch_id: { in: branchIds },
+          created_at: { gte: monthStart, lt: monthEnd },
+        },
+      }).catch(e => { console.error('[dashboard] expenses:', e); return { _sum: { amount: null } } }),
     ])
 
     // Process generators for stat cards — null safe
@@ -425,6 +435,7 @@ export async function GET(req: NextRequest) {
           total_delivered: Number(w.total_delivered ?? 0),
         }
       }),
+      expenses: Number(monthlyExpensesAgg?._sum?.amount ?? 0),
       total_wallet_balance: collectorWallets.reduce((a, w) => a + Number(w.balance ?? 0), 0),
       top_debtors: topDebtors.map((d: any) => ({ id: d.id ?? '', name: d.name ?? '', debt: Number(d.total_debt ?? 0) })),
       gauges: {
