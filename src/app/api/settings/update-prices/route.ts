@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const user = session.user as any
-    if (user.role !== 'owner') return NextResponse.json({ error: 'Owner only' }, { status: 403 })
+    if (user.role !== 'owner' && user.role !== 'manager') return NextResponse.json({ error: 'Owner only' }, { status: 403 })
 
     const body = await req.json()
     const { branch_id, price_per_amp_normal, price_per_amp_gold, billing_month, billing_year } = body
