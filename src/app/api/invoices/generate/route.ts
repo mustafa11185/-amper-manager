@@ -197,6 +197,20 @@ export async function POST(req: NextRequest) {
       })
     } catch (_) {}
 
+    // ═══ إشعار تلقائي للمشتركين عند الإصدار ═══
+    try {
+      const monthNames = ['','يناير','فبراير','مارس','أبريل','مايو','يونيو',
+        'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+      const label = `${monthNames[billingMonth]} ${billingYear}`
+      const msg = `صدرت فاتورة شهر ${label} — يرجى السداد في أقرب وقت`
+      await prisma.$executeRaw`
+        INSERT INTO announcements (tenant_id, type, message, target, auto_generated)
+        VALUES (${tenantId}, 'invoice', ${msg}, 'all', true)
+      `
+    } catch (e: any) {
+      console.error('[generate] auto-notify failed:', e.message)
+    }
+
     // ═══ تصفير دورة جديدة ═══
     // Non-critical cleanup — failures here don't break the generation
 
