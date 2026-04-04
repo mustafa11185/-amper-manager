@@ -21,11 +21,15 @@ enum StaffRole {
 }
 
 enum PlanType {
+  starter
+  pro
+  business
+  corporate
+  fleet
+  custom
   trial
   basic
   gold
-  fleet
-  custom
 }
 
 enum ModuleKey {
