@@ -499,6 +499,8 @@ model Staff {
   is_owner_acting Boolean             @default(false)
   can_collect     Boolean             @default(false)
   can_operate     Boolean             @default(false)
+  can_send_announcements Boolean      @default(false)
+  can_send_urgent Boolean             @default(false)
   photo_url       String?
   device_id       String?
   created_at      DateTime            @default(now())
