@@ -30,37 +30,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
 
-    // If payment was already made with this discount, add discount amount to debt
-    const discountAmount = Number(request.amount)
-    if (discountAmount > 0) {
-      await prisma.subscriber.update({
-        where: { id: request.subscriber_id },
-        data: { total_debt: { increment: discountAmount } },
-      })
-
-      // Audit log
-      await prisma.auditLog.create({
-        data: {
-          tenant_id: request.tenant_id,
-          branch_id: request.branch_id,
-          actor_id: (session.user as any).id,
-          actor_type: 'owner',
-          action: 'discount_rejected_added_to_debt',
-          entity_type: 'subscriber',
-          entity_id: request.subscriber_id,
-          new_value: { discount_amount: discountAmount, subscriber_name: request.subscriber.name },
-        },
-      })
-    }
-
     // Notify the collector that the discount was rejected
+    // Note: invoice stays partial — subscriber will pay the difference later naturally
     await prisma.notification.create({
       data: {
         branch_id: request.branch_id,
         tenant_id: request.tenant_id,
         type: 'discount_rejected',
         title: 'تم رفض الخصم ❌',
-        body: `❌ تم رفض الخصم — ${Number(request.amount).toLocaleString()} د.ع أُضيفت لدين ${request.subscriber.name}`,
+        body: `❌ تم رفض الخصم — ${Number(request.amount).toLocaleString()} د.ع على ${request.subscriber.name} (الفاتورة تبقى جزئية)`,
         payload: { staff_id: request.staff_id, subscriber_id: request.subscriber_id, request_id: id },
       },
     })
