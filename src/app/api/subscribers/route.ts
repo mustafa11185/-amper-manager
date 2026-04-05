@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
       { name: { contains: search, mode: 'insensitive' } },
       { serial_number: { contains: search, mode: 'insensitive' } },
       { phone: { contains: search } },
+      { meter_number: { contains: search, mode: 'insensitive' } },
     ]
   }
 
@@ -139,6 +140,7 @@ export async function GET(req: NextRequest) {
         serial_number: true,
         name: true,
         phone: true,
+        meter_number: true,
         subscription_type: true,
         amperage: true,
         total_debt: true,
@@ -200,7 +202,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { name, phone, address, alley, alley_id, amperage, subscription_type, gps_lat, gps_lng, branch_id, generator_id } = body
+    const { name, phone, address, alley, alley_id, amperage, subscription_type, gps_lat, gps_lng, branch_id, generator_id, meter_number } = body
 
     if (!name || !amperage || !branch_id || !generator_id) {
       return NextResponse.json({ error: 'الحقول المطلوبة: الاسم، الأمبير، الفرع، المولد' }, { status: 400 })
@@ -225,6 +227,7 @@ export async function POST(req: NextRequest) {
         subscription_type: subscription_type || 'normal',
         gps_lat: gps_lat || null,
         gps_lng: gps_lng || null,
+        meter_number: meter_number || null,
       },
     })
 
