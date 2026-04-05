@@ -155,6 +155,7 @@ export async function GET(req: NextRequest) {
           take: 1,
           select: {
             id: true,
+            invoice_number: true,
             billing_month: true,
             billing_year: true,
             total_amount_due: true,
@@ -177,6 +178,7 @@ export async function GET(req: NextRequest) {
         total_debt: Number(s.total_debt),
         current_invoice: inv ? {
           id: inv.id,
+          invoice_number: inv.invoice_number,
           billing_month: inv.billing_month,
           billing_year: inv.billing_year,
           total_amount_due: Number(inv.total_amount_due),
