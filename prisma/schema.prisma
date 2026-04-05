@@ -501,6 +501,13 @@ model Staff {
   can_operate     Boolean             @default(false)
   can_send_announcements Boolean      @default(false)
   can_send_urgent Boolean             @default(false)
+  can_view_phones        Boolean      @default(true)
+  can_view_others_debt   Boolean      @default(false)
+  can_view_wallet        Boolean      @default(true)
+  can_view_salary        Boolean      @default(true)
+  can_send_whatsapp      Boolean      @default(true)
+  can_add_expenses       Boolean      @default(true)
+  can_check_in           Boolean      @default(true)
   photo_url       String?
   device_id       String?
   created_at      DateTime            @default(now())

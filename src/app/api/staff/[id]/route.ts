@@ -43,6 +43,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.is_owner_acting !== undefined) staffData.is_owner_acting = body.is_owner_acting
     if (body.can_send_announcements !== undefined) staffData.can_send_announcements = body.can_send_announcements
     if (body.can_send_urgent !== undefined) staffData.can_send_urgent = body.can_send_urgent
+    if (body.can_view_phones !== undefined) staffData.can_view_phones = body.can_view_phones
+    if (body.can_view_others_debt !== undefined) staffData.can_view_others_debt = body.can_view_others_debt
+    if (body.can_view_wallet !== undefined) staffData.can_view_wallet = body.can_view_wallet
+    if (body.can_view_salary !== undefined) staffData.can_view_salary = body.can_view_salary
+    if (body.can_send_whatsapp !== undefined) staffData.can_send_whatsapp = body.can_send_whatsapp
+    if (body.can_add_expenses !== undefined) staffData.can_add_expenses = body.can_add_expenses
+    if (body.can_check_in !== undefined) staffData.can_check_in = body.can_check_in
 
     const staff = await prisma.staff.update({
       where: { id },

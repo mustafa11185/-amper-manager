@@ -18,6 +18,13 @@ export async function GET() {
       cp.can_operate,
       s.can_send_announcements,
       s.can_send_urgent,
+      s.can_view_phones,
+      s.can_view_others_debt,
+      s.can_view_wallet,
+      s.can_view_salary,
+      s.can_send_whatsapp,
+      s.can_add_expenses,
+      s.can_check_in,
       s.is_active
     FROM staff s
     LEFT JOIN collector_permissions cp ON cp.staff_id = s.id
