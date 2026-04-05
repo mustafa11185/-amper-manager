@@ -432,6 +432,9 @@ model Invoice {
   amount_paid      Decimal  @default(0) @db.Decimal(12,2)
   previous_debt    Decimal  @default(0) @db.Decimal(12,2)
   is_fully_paid    Boolean  @default(false)
+  is_reversed      Boolean  @default(false)
+  reversed_at      DateTime?
+  reversed_by      String?
   payment_method   String?
   online_payment_id String?
   collector_id     String?
