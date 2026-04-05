@@ -141,6 +141,7 @@ export async function GET(req: NextRequest) {
         name: true,
         phone: true,
         meter_number: true,
+        access_code: true,
         subscription_type: true,
         amperage: true,
         total_debt: true,
