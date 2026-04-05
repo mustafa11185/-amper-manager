@@ -60,13 +60,7 @@ export async function POST(
         },
       });
 
-      // 2. Add original amount back to subscriber debt
-      await tx.subscriber.update({
-        where: { id: invoice.subscriber_id },
-        data: { total_debt: { increment: originalPaid } },
-      });
-
-      // 3. Reverse collector wallet if cash payment
+      // 2. Reverse collector wallet if cash payment
       const posTx = await tx.posTransaction.findFirst({
         where: { invoice_id: id },
         orderBy: { created_at: "desc" },
@@ -82,7 +76,7 @@ export async function POST(
         });
       }
 
-      // 4. Audit log
+      // 3. Audit log
       await tx.auditLog.create({
         data: {
           tenant_id: invoice.tenant_id,
