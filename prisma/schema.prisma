@@ -376,6 +376,7 @@ model Subscriber {
   subscription_type   String    @default("normal")
   total_debt          Decimal   @default(0) @db.Decimal(12,2)
   access_code         String?   @unique
+  meter_number        String?
   needs_attention     Boolean   @default(false)
   is_active           Boolean   @default(true)
   deleted_at          DateTime?
@@ -435,6 +436,7 @@ model Invoice {
   is_reversed      Boolean  @default(false)
   reversed_at      DateTime?
   reversed_by      String?
+  invoice_number   String?
   payment_method   String?
   online_payment_id String?
   collector_id     String?

@@ -50,6 +50,11 @@ export async function POST(req: NextRequest) {
     const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
     const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
 
+    const numResult = await prisma.$queryRaw<Array<{ num: string }>>`
+      SELECT generate_invoice_number(${sub.tenant_id}, ${billingYear}::int) as num
+    `
+    const invoiceNumber = numResult[0]?.num ?? null
+
     await prisma.invoice.create({
       data: {
         subscriber_id: sub.id,
@@ -59,6 +64,7 @@ export async function POST(req: NextRequest) {
         billing_year: billingYear,
         base_amount: totalDue,
         total_amount_due: totalDue,
+        invoice_number: invoiceNumber,
       },
     })
     created++

@@ -143,6 +143,11 @@ export async function POST(req: NextRequest) {
           },
         })
 
+        const numResult = await tx.$queryRaw<Array<{ num: string }>>`
+          SELECT generate_invoice_number(${tenantId}, ${billingYear}::int) as num
+        `
+        const invoiceNumber = numResult[0]?.num ?? null
+
         await tx.invoice.create({
           data: {
             subscriber_id: sub.id,
@@ -154,6 +159,7 @@ export async function POST(req: NextRequest) {
             total_amount_due: totalDue,
             amount_paid: 0,
             is_fully_paid: false,
+            invoice_number: invoiceNumber,
           },
         })
         totalCreated++
