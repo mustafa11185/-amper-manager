@@ -50,6 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.can_send_whatsapp !== undefined) staffData.can_send_whatsapp = body.can_send_whatsapp
     if (body.can_add_expenses !== undefined) staffData.can_add_expenses = body.can_add_expenses
     if (body.can_check_in !== undefined) staffData.can_check_in = body.can_check_in
+    if (body.track_location !== undefined) staffData.track_location = body.track_location
 
     const staff = await prisma.staff.update({
       where: { id },

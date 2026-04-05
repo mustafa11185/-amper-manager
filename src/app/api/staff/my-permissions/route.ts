@@ -25,6 +25,7 @@ export async function GET() {
       s.can_send_whatsapp,
       s.can_add_expenses,
       s.can_check_in,
+      s.track_location,
       s.is_active
     FROM staff s
     LEFT JOIN collector_permissions cp ON cp.staff_id = s.id

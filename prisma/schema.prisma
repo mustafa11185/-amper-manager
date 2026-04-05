@@ -513,6 +513,7 @@ model Staff {
   can_send_whatsapp      Boolean      @default(true)
   can_add_expenses       Boolean      @default(true)
   can_check_in           Boolean      @default(true)
+  track_location         Boolean      @default(true)
   photo_url       String?
   device_id       String?
   created_at      DateTime            @default(now())
