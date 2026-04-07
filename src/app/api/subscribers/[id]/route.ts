@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getActiveBillingPeriod } from '@/lib/billing-period'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -38,16 +39,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Compute current_invoice from last generation log (fallback: current month)
   let currentInvoice = null
   try {
-    let bMonth = new Date().getMonth() + 1
-    let bYear = new Date().getFullYear()
-    const lastLog = await prisma.invoiceGenerationLog.findFirst({
-      where: { branch_id: subscriber.branch_id },
-      orderBy: { generated_at: 'desc' },
-    })
-    if (lastLog?.billing_month && lastLog?.billing_year) {
-      bMonth = lastLog.billing_month
-      bYear = lastLog.billing_year
-    }
+    const bp = await getActiveBillingPeriod(subscriber.branch_id)
+    const bMonth = bp.month
+    const bYear = bp.year
 
     const inv = await prisma.invoice.findFirst({
       where: { subscriber_id: id, billing_month: bMonth, billing_year: bYear },
