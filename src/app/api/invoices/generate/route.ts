@@ -99,8 +99,8 @@ export async function POST(req: NextRequest) {
     let totalCreated = 0
     let totalDebtAdded = 0
 
+    // Step 1: Roll unpaid invoices into subscriber debt (separate transaction)
     await prisma.$transaction(async (tx) => {
-      // Step 1: Roll unpaid invoices into subscriber debt
       const debtBySubscriber = new Map<string, number>()
       for (const inv of unpaidInvoices) {
         const remaining = Number(inv.total_amount_due) - Number(inv.amount_paid)
@@ -117,22 +117,20 @@ export async function POST(req: NextRequest) {
         totalDebtAdded++
       }
 
-      // Mark unpaid invoices as rolled to debt
       if (unpaidInvoices.length > 0) {
         await tx.invoice.updateMany({
-          where: {
-            id: { in: unpaidInvoices.map(i => i.id) },
-          },
+          where: { id: { in: unpaidInvoices.map(i => i.id) } },
           data: { is_fully_paid: true, payment_method: 'rolled_to_debt' },
         })
       }
+    }, { maxWait: 10000, timeout: 30000 })
 
-      // Step 2: Create or update invoices for all active subscribers
+    // Step 2: Create or update invoices (separate transaction, longer timeout)
+    await prisma.$transaction(async (tx) => {
       for (const sub of subscribers) {
         const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
         const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
 
-        // Check if invoice already exists for this period
         const existing = await tx.invoice.findUnique({
           where: {
             subscriber_id_billing_month_billing_year: {
@@ -144,17 +142,12 @@ export async function POST(req: NextRequest) {
         })
 
         if (existing) {
-          // Skip if subscriber already paid (fully or partially)
           if (Number(existing.amount_paid) > 0 || existing.is_fully_paid) {
             continue
           }
-          // Update existing unpaid invoice with new amount
           await tx.invoice.update({
             where: { id: existing.id },
-            data: {
-              base_amount: totalDue,
-              total_amount_due: totalDue,
-            },
+            data: { base_amount: totalDue, total_amount_due: totalDue },
           })
         } else {
           const numResult = await tx.$queryRaw<Array<{ num: string }>>`
@@ -179,8 +172,7 @@ export async function POST(req: NextRequest) {
         }
         totalCreated++
       }
-
-    })
+    }, { maxWait: 10000, timeout: 60000 })
 
     // Create generation log outside transaction (non-critical)
     try {
