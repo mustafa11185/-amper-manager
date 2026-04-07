@@ -22,3 +22,9 @@ export function monthName(month: number): string {
   const m = MONTHS.find(x => x.num === month)
   return m ? `${m.local} ${month}` : `${month}`
 }
+
+/** Current billing month/year — always from system clock */
+export function currentBillingPeriod(): { month: number; year: number } {
+  const now = new Date()
+  return { month: now.getMonth() + 1, year: now.getFullYear() }
+}
