@@ -133,6 +133,7 @@ export async function GET(req: NextRequest) {
             total_amount_due: true,
             amount_paid: true,
             is_fully_paid: true,
+            payment_method: true,
           },
         },
       },
@@ -156,6 +157,7 @@ export async function GET(req: NextRequest) {
           total_amount_due: Number(inv.total_amount_due),
           amount_paid: Number(inv.amount_paid),
           is_fully_paid: inv.is_fully_paid,
+          payment_method: inv.payment_method,
         } : null,
       }
     }),
