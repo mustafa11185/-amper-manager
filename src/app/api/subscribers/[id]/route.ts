@@ -35,15 +35,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'المشترك غير موجود' }, { status: 404 })
   }
 
-  // Compute current_invoice from billing month
+  // Compute current_invoice from current month (not pricing)
   let currentInvoice = null
   try {
-    const pricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: subscriber.branch_id },
-      orderBy: { effective_from: 'desc' },
-    })
-    const bMonth = pricing ? new Date(pricing.effective_from).getMonth() + 1 : new Date().getMonth() + 1
-    const bYear = pricing ? new Date(pricing.effective_from).getFullYear() : new Date().getFullYear()
+    const bMonth = new Date().getMonth() + 1
+    const bYear = new Date().getFullYear()
 
     const inv = await prisma.invoice.findFirst({
       where: { subscriber_id: id, billing_month: bMonth, billing_year: bYear },
@@ -59,6 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         amount_paid: paid,
         remaining: Math.max(0, due - paid),
         is_fully_paid: inv.is_fully_paid,
+        payment_method: inv.payment_method,
         base_amount: Number(inv.base_amount),
         discount_amount: Number(inv.discount_amount),
       }
