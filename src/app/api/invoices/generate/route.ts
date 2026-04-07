@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { branch_id } = await req.json()
+    const body = await req.json()
+    const { branch_id } = body
     const tenantId = user.tenantId as string
 
     if (!branch_id) {
@@ -47,12 +48,8 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date()
-    const billingMonth = now.getMonth() + 1
-    const billingYear = now.getFullYear()
-
-    if (!billingMonth || !billingYear) {
-      return NextResponse.json({ error: 'يجب تحديد الشهر المستحق أولاً' }, { status: 400 })
-    }
+    const billingMonth = body.billing_month || (now.getMonth() + 1)
+    const billingYear = body.billing_year || now.getFullYear()
 
     // CHECK 3: Was invoice generation already done today for this branch?
     try {
