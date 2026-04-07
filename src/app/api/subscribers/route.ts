@@ -54,27 +54,9 @@ export async function GET(req: NextRequest) {
     delete where.total_debt
     where.is_active = true
 
-    // Get active billing month from latest pricing
-    let branchIds: string[]
-    if (branchId) {
-      branchIds = [branchId]
-    } else {
-      branchIds = (await prisma.branch.findMany({ where: { tenant_id: tenantId }, select: { id: true } })).map(b => b.id)
-    }
-
-    let bMonth = new Date().getMonth() + 1
-    let bYear = new Date().getFullYear()
-    if (branchIds.length > 0) {
-      const latestPricing = await prisma.monthlyPricing.findFirst({
-        where: { branch_id: { in: branchIds } },
-        orderBy: { effective_from: 'desc' },
-      })
-      if (latestPricing) {
-        const eff = new Date(latestPricing.effective_from)
-        bMonth = eff.getMonth() + 1
-        bYear = eff.getFullYear()
-      }
-    }
+    // Use current month for unpaid filter (not pricing effective_from)
+    const bMonth = new Date().getMonth() + 1
+    const bYear = new Date().getFullYear()
 
     // Find subscribers who have an UNPAID invoice for this billing period
     const unpaidInvoices = await prisma.invoice.findMany({
