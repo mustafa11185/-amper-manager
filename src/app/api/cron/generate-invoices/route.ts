@@ -32,8 +32,8 @@ export async function POST() {
     console.log(`  Branch ${branchId}: configured_day=${invoiceDay}, target=${targetDay}, today=${dayOfMonth}`);
     if (dayOfMonth !== targetDay) continue;
 
-    const billingMonth = new Date(pricing.effective_from).getMonth() + 1;
-    const billingYear = new Date(pricing.effective_from).getFullYear();
+    const billingMonth = new Date().getMonth() + 1;
+    const billingYear = new Date().getFullYear();
     const priceNormal = Number(pricing.price_per_amp_normal);
     const priceGold = Number(pricing.price_per_amp_gold);
 

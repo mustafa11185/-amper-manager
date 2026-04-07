@@ -42,11 +42,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'لم يتم إعداد الدفع الإلكتروني' }, { status: 400 })
     }
 
-    const pricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: branch.id },
-      orderBy: { effective_from: 'desc' },
-    })
-    const billingMonth = pricing ? new Date(pricing.effective_from).getMonth() + 1 : new Date().getMonth() + 1
+    const billingMonth = new Date().getMonth() + 1
 
     const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3002'
 

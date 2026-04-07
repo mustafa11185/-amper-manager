@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'يجب تحديد سعر الأمبير أولاً — الأسعار المحفوظة صفر' }, { status: 400 })
   }
 
-  const billingMonth = new Date(pricing.effective_from).getMonth() + 1
-  const billingYear = new Date(pricing.effective_from).getFullYear()
+  const billingMonth = new Date().getMonth() + 1
+  const billingYear = new Date().getFullYear()
 
   // Find active subscribers with NO invoice at all for this billing period
   const activeSubscribers = await prisma.subscriber.findMany({

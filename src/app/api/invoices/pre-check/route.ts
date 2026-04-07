@@ -31,8 +31,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ check_failed: 'no_pricing', error: 'يجب تحديد سعر الأمبير أولاً' })
     }
 
-    const billingMonth = new Date(pricing.effective_from).getMonth() + 1
-    const billingYear = new Date(pricing.effective_from).getFullYear()
+    const billingMonth = new Date().getMonth() + 1
+    const billingYear = new Date().getFullYear()
 
     if (!billingMonth || !billingYear) {
       return NextResponse.json({ check_failed: 'no_month', error: 'يجب تحديد الشهر المستحق أولاً' })

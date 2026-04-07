@@ -27,12 +27,8 @@ export async function POST(
     if (!subscriber) return NextResponse.json({ error: 'المشترك غير موجود' }, { status: 404 })
 
     // Get active billing month
-    const pricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: subscriber.branch_id },
-      orderBy: { effective_from: 'desc' },
-    })
-    const bMonth = pricing ? new Date(pricing.effective_from).getMonth() + 1 : new Date().getMonth() + 1
-    const bYear = pricing ? new Date(pricing.effective_from).getFullYear() : new Date().getFullYear()
+    const bMonth = new Date().getMonth() + 1
+    const bYear = new Date().getFullYear()
 
     // Find current unpaid invoice
     const invoice = await prisma.invoice.findFirst({
