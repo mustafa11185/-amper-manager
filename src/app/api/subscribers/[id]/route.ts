@@ -35,11 +35,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'المشترك غير موجود' }, { status: 404 })
   }
 
-  // Compute current_invoice from current month (not pricing)
+  // Compute current_invoice from last generation log (fallback: current month)
   let currentInvoice = null
   try {
-    const bMonth = new Date().getMonth() + 1
-    const bYear = new Date().getFullYear()
+    let bMonth = new Date().getMonth() + 1
+    let bYear = new Date().getFullYear()
+    const lastLog = await prisma.invoiceGenerationLog.findFirst({
+      where: { branch_id: subscriber.branch_id },
+      orderBy: { generated_at: 'desc' },
+    })
+    if (lastLog?.billing_month && lastLog?.billing_year) {
+      bMonth = lastLog.billing_month
+      bYear = lastLog.billing_year
+    }
 
     const inv = await prisma.invoice.findFirst({
       where: { subscriber_id: id, billing_month: bMonth, billing_year: bYear },
