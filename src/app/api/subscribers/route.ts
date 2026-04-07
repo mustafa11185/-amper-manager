@@ -96,20 +96,9 @@ export async function GET(req: NextRequest) {
     ? { total_debt: 'desc' as const }
     : { created_at: 'desc' as const }
 
-  // Get billing month for current_invoice lookup
-  let currentBMonth = new Date().getMonth() + 1
-  let currentBYear = new Date().getFullYear()
-  try {
-    const pricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: branchId ? branchId : undefined },
-      orderBy: { effective_from: 'desc' },
-    })
-    if (pricing) {
-      const eff = new Date(pricing.effective_from)
-      currentBMonth = eff.getMonth() + 1
-      currentBYear = eff.getFullYear()
-    }
-  } catch {}
+  // Get billing month for current_invoice lookup — use current date, not pricing
+  const currentBMonth = new Date().getMonth() + 1
+  const currentBYear = new Date().getFullYear()
 
   const [subscribers, total] = await Promise.all([
     prisma.subscriber.findMany({
