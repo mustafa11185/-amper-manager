@@ -94,6 +94,8 @@ export async function POST(req: NextRequest) {
     })
 
     let totalCreated = 0
+    let totalUpdated = 0
+    let totalSkipped = 0
     let totalDebtAdded = 0
 
     // Step 1: Roll unpaid invoices into subscriber debt (separate transaction)
@@ -140,12 +142,14 @@ export async function POST(req: NextRequest) {
 
         if (existing) {
           if (Number(existing.amount_paid) > 0 || existing.is_fully_paid) {
+            totalSkipped++
             continue
           }
           await tx.invoice.update({
             where: { id: existing.id },
             data: { base_amount: totalDue, total_amount_due: totalDue },
           })
+          totalUpdated++
         } else {
           const numResult = await tx.$queryRaw<Array<{ num: string }>>`
             SELECT generate_invoice_number(${tenantId}, ${billingYear}::int) as num
@@ -256,6 +260,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       generated: totalCreated,
+      updated: totalUpdated,
+      skipped: totalSkipped,
       debts_added: totalDebtAdded,
       billing_month: billingMonth,
       billing_year: billingYear,
