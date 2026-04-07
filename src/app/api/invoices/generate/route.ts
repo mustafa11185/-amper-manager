@@ -127,41 +127,56 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Step 2: Create new invoices for all active subscribers
+      // Step 2: Create or update invoices for all active subscribers
       for (const sub of subscribers) {
         const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
         const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
 
-        // Delete any existing invoice for this period (to avoid unique constraint)
-        await tx.invoice.deleteMany({
+        // Check if invoice already exists for this period
+        const existing = await tx.invoice.findUnique({
           where: {
-            subscriber_id: sub.id,
-            billing_month: billingMonth,
-            billing_year: billingYear,
-            is_fully_paid: false,
-            amount_paid: 0,
+            subscriber_id_billing_month_billing_year: {
+              subscriber_id: sub.id,
+              billing_month: billingMonth,
+              billing_year: billingYear,
+            },
           },
         })
 
-        const numResult = await tx.$queryRaw<Array<{ num: string }>>`
-          SELECT generate_invoice_number(${tenantId}, ${billingYear}::int) as num
-        `
-        const invoiceNumber = numResult[0]?.num ?? null
+        if (existing) {
+          // Skip if subscriber already paid (fully or partially)
+          if (Number(existing.amount_paid) > 0 || existing.is_fully_paid) {
+            continue
+          }
+          // Update existing unpaid invoice with new amount
+          await tx.invoice.update({
+            where: { id: existing.id },
+            data: {
+              base_amount: totalDue,
+              total_amount_due: totalDue,
+            },
+          })
+        } else {
+          const numResult = await tx.$queryRaw<Array<{ num: string }>>`
+            SELECT generate_invoice_number(${tenantId}, ${billingYear}::int) as num
+          `
+          const invoiceNumber = numResult[0]?.num ?? null
 
-        await tx.invoice.create({
-          data: {
-            subscriber_id: sub.id,
-            branch_id,
-            tenant_id: tenantId,
-            billing_month: billingMonth,
-            billing_year: billingYear,
-            base_amount: totalDue,
-            total_amount_due: totalDue,
-            amount_paid: 0,
-            is_fully_paid: false,
-            invoice_number: invoiceNumber,
-          },
-        })
+          await tx.invoice.create({
+            data: {
+              subscriber_id: sub.id,
+              branch_id,
+              tenant_id: tenantId,
+              billing_month: billingMonth,
+              billing_year: billingYear,
+              base_amount: totalDue,
+              total_amount_due: totalDue,
+              amount_paid: 0,
+              is_fully_paid: false,
+              invoice_number: invoiceNumber,
+            },
+          })
+        }
         totalCreated++
       }
 
