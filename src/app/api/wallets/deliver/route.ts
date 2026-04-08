@@ -28,6 +28,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'المحفظة غير موجودة' }, { status: 404 })
     }
 
+    // Tenant validation
+    if (wallet.tenant_id !== user.tenantId) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 403 })
+    }
+
     const deliverAmount = Math.min(amount, Number(wallet.balance))
 
     if (deliverAmount <= 0) {

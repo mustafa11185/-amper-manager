@@ -57,9 +57,19 @@ export async function GET(req: NextRequest) {
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const todayCount = collections.filter(c => new Date(c.created_at) >= todayStart).length;
 
+    // Month collected: sum of POS transactions for current month
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const monthCollections = await prisma.posTransaction.aggregate({
+      where: { staff_id: user.id, created_at: { gte: monthStart }, status: "success" },
+      _sum: { amount: true },
+    });
+    const monthCollected = Number(monthCollections._sum.amount) || 0;
+
     return NextResponse.json({
       balance: wallet ? Number(wallet.balance) : 0,
+      total_collected: wallet ? Number(wallet.total_collected) : 0,
       total_delivered: wallet ? Number(wallet.total_delivered) : 0,
+      month_collected: monthCollected,
       today_count: todayCount,
       transactions,
     });
