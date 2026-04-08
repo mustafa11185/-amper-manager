@@ -26,8 +26,11 @@ export async function POST(
       return NextResponse.json({ error: "السبب مطلوب" }, { status: 400 });
     }
 
-    const invoice = await prisma.invoice.findUnique({
-      where: { id },
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id,
+        subscriber: { tenant_id: user.tenantId as string }
+      },
       include: { subscriber: { select: { id: true, name: true } } },
     });
     if (!invoice) {

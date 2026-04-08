@@ -12,6 +12,12 @@ export async function POST(req: NextRequest) {
 
   if (!branch_id) return NextResponse.json({ error: 'branch_id required' }, { status: 400 })
 
+  // Verify branch belongs to tenant
+  const branch = await prisma.branch.findFirst({
+    where: { id: branch_id, tenant_id: user.tenantId as string }
+  })
+  if (!branch) return NextResponse.json({ error: 'غير مصرح' }, { status: 403 })
+
   // Get latest pricing
   const pricing = await prisma.monthlyPricing.findFirst({
     where: { branch_id },

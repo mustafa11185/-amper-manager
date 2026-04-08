@@ -32,19 +32,17 @@ export async function POST(req: NextRequest) {
 
     await prisma.$transaction(async (tx) => {
       // Find invoices created in this generation batch
-      // Match by branch, billing period, and created_at close to generated_at
+      // Match by branch, billing period, and created at/after generation time (no fragile time window)
       const genTime = new Date(lastLog.generated_at)
-      const windowStart = new Date(genTime.getTime() - 60000) // 1 min before
-      const windowEnd = new Date(genTime.getTime() + 300000)  // 5 min after
 
       const invoicesToDelete = await tx.invoice.findMany({
         where: {
           branch_id,
           billing_month: lastLog.billing_month,
           billing_year: lastLog.billing_year,
-          created_at: { gte: windowStart, lte: windowEnd },
           amount_paid: 0,
           is_fully_paid: false,
+          created_at: { gte: genTime },
         },
         select: { id: true },
       })
@@ -56,12 +54,12 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Restore debt: find invoices that were rolled to debt in the same window
+      // Restore debt: find invoices that were rolled to debt during this generation
       const rolledInvoices = await tx.invoice.findMany({
         where: {
           branch_id,
           payment_method: 'rolled_to_debt',
-          updated_at: { gte: windowStart, lte: windowEnd },
+          updated_at: { gte: genTime },
         },
         select: { id: true, subscriber_id: true, total_amount_due: true, amount_paid: true },
       })

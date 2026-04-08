@@ -78,6 +78,31 @@ export async function POST(req: NextRequest) {
       console.log('InvoiceGenerationLog check failed (table may not exist):', e.message)
     }
 
+    // Create generation log FIRST to act as a lock against concurrent generation.
+    // If another request already created a log for this branch+month+year today, this will
+    // be caught by the daily check above. By creating early, we narrow the race window.
+    let generationLog: any
+    try {
+      generationLog = await prisma.invoiceGenerationLog.create({
+        data: {
+          branch_id,
+          tenant_id: tenantId,
+          invoice_count: 0,
+          debt_count: 0,
+          billing_month: billingMonth,
+          billing_year: billingYear,
+          generated_by: user.staffId || user.id || 'owner',
+        },
+      })
+    } catch (logErr: any) {
+      // If this fails due to a constraint violation, another generation is in progress
+      if (logErr.code === 'P2002') {
+        return NextResponse.json({ error: 'جاري إصدار الفواتير بالفعل' }, { status: 409 })
+      }
+      console.log('InvoiceGenerationLog early creation failed:', logErr.message)
+      // Non-critical: continue without the log
+    }
+
     // Get all active subscribers
     const subscribers = await prisma.subscriber.findMany({
       where: { branch_id, is_active: true },
@@ -175,21 +200,19 @@ export async function POST(req: NextRequest) {
       }
     }, { maxWait: 10000, timeout: 60000 })
 
-    // Create generation log outside transaction (non-critical)
+    // Update generation log with final counts (non-critical)
     try {
-      await prisma.invoiceGenerationLog.create({
-        data: {
-          branch_id,
-          tenant_id: tenantId,
-          invoice_count: totalCreated,
-          debt_count: totalDebtAdded,
-          billing_month: billingMonth,
-          billing_year: billingYear,
-          generated_by: user.staffId || user.id || 'owner',
-        },
-      })
+      if (generationLog) {
+        await prisma.invoiceGenerationLog.update({
+          where: { id: generationLog.id },
+          data: {
+            invoice_count: totalCreated,
+            debt_count: totalDebtAdded,
+          },
+        })
+      }
     } catch (logErr: any) {
-      console.log('InvoiceGenerationLog creation failed:', logErr.message)
+      console.log('InvoiceGenerationLog update failed:', logErr.message)
     }
 
     // Notify all collectors in branch

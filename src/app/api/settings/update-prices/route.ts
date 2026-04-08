@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
       orderBy: { effective_from: 'desc' },
     })
 
+    const oldNormal = existing ? Number(existing.price_per_amp_normal) : null
+    const oldGold = existing ? Number(existing.price_per_amp_gold) : null
+
     if (existing) {
       await prisma.monthlyPricing.update({
         where: { id: existing.id },
@@ -56,6 +60,25 @@ export async function POST(req: NextRequest) {
           effective_from: new Date(bYear, bMonth - 1, 1),
         },
       })
+    }
+
+    // Audit log for price change
+    try {
+      await prisma.auditLog.create({
+        data: {
+          tenant_id: user.tenantId as string,
+          branch_id,
+          actor_id: user.id,
+          actor_type: user.role,
+          action: 'price_change',
+          entity_type: 'pricing',
+          entity_id: branch_id,
+          old_value: oldNormal != null ? { normal: oldNormal, gold: oldGold } : Prisma.JsonNull,
+          new_value: { normal: priceN, gold: priceG, month: bMonth, year: bYear },
+        },
+      })
+    } catch (_) {
+      // Non-critical — don't fail the price update if audit logging fails
     }
 
     // Price update ONLY changes MonthlyPricing — does NOT touch existing invoices
