@@ -14,8 +14,8 @@ export async function GET() {
     SELECT
       cp.can_give_discount,
       cp.discount_max_amount,
-      cp.can_collect,
-      cp.can_operate,
+      s.can_collect,
+      s.can_operate,
       s.can_send_announcements,
       s.can_send_urgent,
       s.can_view_phones,
