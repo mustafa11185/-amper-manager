@@ -20,108 +20,116 @@ export async function GET() {
   const now = new Date()
   const currentMonth = now.getMonth() + 1
   const currentYear = now.getFullYear()
+  const monthStart = new Date(currentYear, currentMonth - 1, 1)
 
   try {
-    // ── A) FINANCIAL ──
-    // Last 6 months revenue
-    const monthlyRevenue: { month: number; year: number; total: number }[] = []
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(currentYear, currentMonth - 1 - i, 1)
-      const m = d.getMonth() + 1
-      const y = d.getFullYear()
-      const agg = await prisma.invoice.aggregate({
+    // ══════════════════════════════════════════
+    //  BATCH 1: All independent queries in parallel
+    // ══════════════════════════════════════════
+    const [
+      cashThisMonth,
+      onlineThisMonth,
+      totalDebtAgg,
+      totalInvoices,
+      paidInvoices,
+      totalActive,
+      goldCount,
+      normalCount,
+      goldAmp,
+      normalAmp,
+      unpaidSubs,
+      staff,
+      allStaff,
+      expensesThisMonth,
+      onlinePayments,
+    ] = await Promise.all([
+      prisma.invoice.aggregate({
         _sum: { amount_paid: true },
-        where: { branch_id: { in: branchIds }, billing_month: m, billing_year: y },
+        where: { branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear, payment_method: { notIn: ['furatpay'] } },
+      }),
+      prisma.onlinePayment.aggregate({
+        _sum: { amount: true },
+        where: { tenant_id: tenantId, status: 'success', created_at: { gte: monthStart } },
+      }),
+      prisma.subscriber.aggregate({
+        _sum: { total_debt: true },
+        where: { branch_id: { in: branchIds }, is_active: true },
+      }),
+      prisma.invoice.count({
+        where: { branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear },
+      }),
+      prisma.invoice.count({
+        where: { branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear, is_fully_paid: true },
+      }),
+      prisma.subscriber.count({ where: { branch_id: { in: branchIds }, is_active: true } }),
+      prisma.subscriber.count({ where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'gold' } }),
+      prisma.subscriber.count({ where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'normal' } }),
+      prisma.subscriber.aggregate({ _sum: { amperage: true }, where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'gold' } }),
+      prisma.subscriber.aggregate({ _sum: { amperage: true }, where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'normal' } }),
+      prisma.subscriber.findMany({
+        where: { branch_id: { in: branchIds }, is_active: true, total_debt: { gt: 0 } },
+        select: { id: true, name: true, total_debt: true },
+        orderBy: { total_debt: 'desc' },
+        take: 5,
+      }),
+      prisma.staff.findMany({
+        where: { tenant_id: tenantId, is_active: true, role: 'collector' },
+        select: { id: true, name: true },
+      }),
+      prisma.staff.findMany({
+        where: { tenant_id: tenantId, is_active: true, role: { in: ['collector', 'operator'] } },
+        select: { id: true, name: true, role: true },
+      }),
+      prisma.expense.findMany({
+        where: { branch_id: { in: branchIds }, created_at: { gte: monthStart } },
+      }),
+      prisma.onlinePayment.findMany({
+        where: { tenant_id: tenantId, created_at: { gte: monthStart } },
+        orderBy: { created_at: 'desc' },
+      }),
+    ])
+
+    // ══════════════════════════════════════════
+    //  BATCH 2: Revenue history (6 months parallel)
+    // ══════════════════════════════════════════
+    const monthlyRevenue = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(currentYear, currentMonth - 1 - (5 - i), 1)
+        const m = d.getMonth() + 1
+        const y = d.getFullYear()
+        return prisma.invoice.aggregate({
+          _sum: { amount_paid: true },
+          where: { branch_id: { in: branchIds }, billing_month: m, billing_year: y },
+        }).then(agg => ({ month: m, year: y, total: Number(agg._sum.amount_paid ?? 0) }))
       })
-      monthlyRevenue.push({ month: m, year: y, total: Number(agg._sum.amount_paid ?? 0) })
-    }
+    )
 
-    // This month cash vs online
-    const cashThisMonth = await prisma.invoice.aggregate({
-      _sum: { amount_paid: true },
-      where: {
-        branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear,
-        payment_method: { notIn: ['furatpay'] },
-      },
-    })
-    const onlineThisMonth = await prisma.onlinePayment.aggregate({
-      _sum: { amount: true },
-      where: { tenant_id: tenantId, status: 'success', created_at: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-    })
-    const totalDebtAgg = await prisma.subscriber.aggregate({
-      _sum: { total_debt: true },
-      where: { branch_id: { in: branchIds }, is_active: true },
-    })
-    const totalInvoices = await prisma.invoice.count({
-      where: { branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear },
-    })
-    const paidInvoices = await prisma.invoice.count({
-      where: { branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear, is_fully_paid: true },
-    })
-
-    // ── B) SUBSCRIBERS ──
-    const totalActive = await prisma.subscriber.count({ where: { branch_id: { in: branchIds }, is_active: true } })
-    const goldCount = await prisma.subscriber.count({ where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'gold' } })
-    const normalCount = await prisma.subscriber.count({ where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'normal' } })
-    const goldAmp = await prisma.subscriber.aggregate({ _sum: { amperage: true }, where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'gold' } })
-    const normalAmp = await prisma.subscriber.aggregate({ _sum: { amperage: true }, where: { branch_id: { in: branchIds }, is_active: true, subscription_type: 'normal' } })
-
-    const unpaidSubs = await prisma.subscriber.findMany({
-      where: { branch_id: { in: branchIds }, is_active: true },
-      select: { id: true, name: true, total_debt: true },
-    })
-    const unpaidList = unpaidSubs.filter(s => Number(s.total_debt) > 0)
-    const topDebtors = unpaidList.sort((a, b) => Number(b.total_debt) - Number(a.total_debt)).slice(0, 5)
-
-    // ── C) COLLECTORS ──
-    const staff = await prisma.staff.findMany({
-      where: { tenant_id: tenantId, is_active: true, role: 'collector' },
-      select: { id: true, name: true },
-    })
+    // ══════════════════════════════════════════
+    //  BATCH 3: Collector stats (parallel per collector)
+    // ══════════════════════════════════════════
     const collectorStats = await Promise.all(staff.map(async (s) => {
-      const wallet = await prisma.collectorWallet.findUnique({ where: { staff_id: s.id } })
-      const paymentCount = await prisma.posTransaction.count({
-        where: { staff_id: s.id, created_at: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-      })
-      const shifts = await prisma.collectorShift.findMany({
-        where: { staff_id: s.id, shift_date: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-      })
-      const lateDays = shifts.filter(sh => (sh.late_minutes ?? 0) > 0).length
+      const [wallet, paymentCount, shifts] = await Promise.all([
+        prisma.collectorWallet.findUnique({ where: { staff_id: s.id } }),
+        prisma.posTransaction.count({ where: { staff_id: s.id, created_at: { gte: monthStart } } }),
+        prisma.collectorShift.findMany({ where: { staff_id: s.id, shift_date: { gte: monthStart } } }),
+      ])
       return {
         id: s.id, name: s.name,
         collected: Number(wallet?.total_collected ?? 0),
         delivered: Number(wallet?.total_delivered ?? 0),
         balance: Number(wallet?.balance ?? 0),
         payment_count: paymentCount,
-        late_days: lateDays,
+        late_days: shifts.filter(sh => (sh.late_minutes ?? 0) > 0).length,
       }
     }))
 
-    // ── D) EXPENSES ──
-    const expensesThisMonth = await prisma.expense.findMany({
-      where: { branch_id: { in: branchIds }, created_at: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-    })
-    const expenseByCategory: Record<string, number> = {}
-    let totalExpenses = 0
-    for (const e of expensesThisMonth) {
-      const cat = e.category || 'أخرى'
-      expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(e.amount)
-      totalExpenses += Number(e.amount)
-    }
-
-    // ── E) ATTENDANCE ──
-    const allStaff = await prisma.staff.findMany({
-      where: { tenant_id: tenantId, is_active: true, role: { in: ['collector', 'operator'] } },
-      select: { id: true, name: true, role: true },
-    })
+    // ══════════════════════════════════════════
+    //  BATCH 4: Attendance stats (parallel per staff)
+    // ══════════════════════════════════════════
     const attendanceStats = await Promise.all(allStaff.map(async (s) => {
       const shifts = s.role === 'collector'
-        ? await prisma.collectorShift.findMany({
-            where: { staff_id: s.id, shift_date: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-          })
-        : await prisma.operatorShift.findMany({
-            where: { staff_id: s.id, shift_date: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-          })
+        ? await prisma.collectorShift.findMany({ where: { staff_id: s.id, shift_date: { gte: monthStart } } })
+        : await prisma.operatorShift.findMany({ where: { staff_id: s.id, shift_date: { gte: monthStart } } })
       const present = shifts.filter(sh => sh.check_in_at !== null).length
       const totalLateMin = shifts.reduce((sum, sh) => sum + ((sh as any).late_minutes ?? 0), 0)
       const lateDays = shifts.filter(sh => ((sh as any).late_minutes ?? 0) > 0).length
@@ -134,31 +142,27 @@ export async function GET() {
       }
     }))
 
-    // ── F) ONLINE PAYMENTS ──
-    const onlinePayments = await prisma.onlinePayment.findMany({
-      where: { tenant_id: tenantId, created_at: { gte: new Date(currentYear, currentMonth - 1, 1) } },
-      orderBy: { created_at: 'desc' },
-      include: { tenant: false },
-    })
-    // Get subscriber names for online payments
+    // ── Process expenses ──
+    const expenseByCategory: Record<string, number> = {}
+    let totalExpenses = 0
+    for (const e of expensesThisMonth) {
+      const cat = e.category || 'أخرى'
+      expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(e.amount)
+      totalExpenses += Number(e.amount)
+    }
+
+    // ── Process online payments ──
     const subIds = [...new Set(onlinePayments.filter(p => p.subscriber_id).map(p => p.subscriber_id!))]
     const subNames = subIds.length > 0
       ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, name: true } })
       : []
     const subNameMap = new Map(subNames.map(s => [s.id, s.name]))
-
     const onlineList = onlinePayments.map(p => ({
-      id: p.id,
-      date: p.created_at,
+      id: p.id, date: p.created_at,
       subscriber_name: p.subscriber_id ? subNameMap.get(p.subscriber_id) ?? '—' : '—',
-      amount: Number(p.amount),
-      status: p.status,
-      tran_ref: p.gateway_ref ?? '—',
+      amount: Number(p.amount), status: p.status, tran_ref: p.gateway_ref ?? '—',
     }))
-    const totalOnlineSuccess = onlinePayments.filter(p => p.status === 'success').reduce((s, p) => s + Number(p.amount), 0)
-    const onlineSuccessRate = onlinePayments.length > 0
-      ? Math.round((onlinePayments.filter(p => p.status === 'success').length / onlinePayments.length) * 100)
-      : 0
+    const successPayments = onlinePayments.filter(p => p.status === 'success')
 
     return NextResponse.json({
       financial: {
@@ -172,20 +176,17 @@ export async function GET() {
         total: totalActive, gold_count: goldCount, normal_count: normalCount,
         gold_amperage: Number(goldAmp._sum.amperage ?? 0),
         normal_amperage: Number(normalAmp._sum.amperage ?? 0),
-        unpaid_count: unpaidList.length,
-        unpaid_total: unpaidList.reduce((s, u) => s + Number(u.total_debt), 0),
-        top_debtors: topDebtors.map(d => ({ name: d.name, debt: Number(d.total_debt) })),
+        unpaid_count: unpaidSubs.length,
+        unpaid_total: unpaidSubs.reduce((s, u) => s + Number(u.total_debt), 0),
+        top_debtors: unpaidSubs.map(d => ({ name: d.name, debt: Number(d.total_debt) })),
       },
       collectors: collectorStats,
-      expenses: {
-        total: totalExpenses,
-        by_category: expenseByCategory,
-      },
+      expenses: { total: totalExpenses, by_category: expenseByCategory },
       attendance: attendanceStats,
       online_payments: {
         list: onlineList,
-        total_success: totalOnlineSuccess,
-        success_rate: onlineSuccessRate,
+        total_success: successPayments.reduce((s, p) => s + Number(p.amount), 0),
+        success_rate: onlinePayments.length > 0 ? Math.round((successPayments.length / onlinePayments.length) * 100) : 0,
       },
     })
   } catch (err: any) {
