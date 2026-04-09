@@ -29,16 +29,26 @@ export async function GET(req: NextRequest) {
     AND: [] as any[],
   }
 
-  // الموظف يرى فقط الإشعارات المتعلقة به
+  // الموظف يرى فقط الإشعارات الموجهة له شخصياً
   if (user.role !== 'owner' && user.role !== 'manager') {
-    where.AND.push({ type: { in: [
-      'discount_approved',
-      'discount_rejected',
-      'announcement_to_staff',
-      'shift_reminder',
-      'salary_ready',
-      'task_assigned',
-    ]}})
+    where.AND.push({
+      OR: [
+        // إشعارات شخصية (خصم، راتب) — فقط إذا staff_id يطابق
+        {
+          type: { in: ['discount_approved', 'discount_rejected', 'salary_ready', 'task_assigned'] },
+          payload: { path: ['staff_id'], equals: user.id },
+        },
+        // إشعارات عامة للموظفين
+        { type: { in: ['announcement_to_staff', 'shift_reminder'] } },
+      ],
+    })
+  }
+
+  // المدير لا يرى إشعارات الموظفين الشخصية (الخصم الموجه لموظف معين)
+  if (user.role === 'owner' || user.role === 'manager') {
+    where.AND.push({
+      type: { notIn: ['discount_approved', 'discount_rejected'] },
+    })
   }
 
   if (typeFilter && typeFilter !== 'all') {
