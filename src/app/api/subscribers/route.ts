@@ -26,8 +26,13 @@ export async function GET(req: NextRequest) {
 
   const where: any = {
     tenant_id: tenantId,
+    // Staff can only see subscribers in their own branch
     ...(user.role !== 'owner' && branchId ? { branch_id: branchId } : {}),
   }
+
+  // Owner can filter by branch_id query param
+  const qBranch = url.get('branch_id')
+  if (qBranch) where.branch_id = qBranch
 
   if (search) {
     where.OR = [

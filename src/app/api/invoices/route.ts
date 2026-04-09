@@ -9,14 +9,23 @@ export async function GET(req: NextRequest) {
 
   const user = session.user as any
   const tenantId = user.tenantId as string
+  const branchId = user.branchId as string | undefined
 
   const url = req.nextUrl.searchParams
   const subscriberId = url.get('subscriber_id')
   const page = parseInt(url.get('page') || '1')
   const limit = parseInt(url.get('limit') || '20')
 
-  const where: any = { tenant_id: tenantId }
+  const where: any = {
+    tenant_id: tenantId,
+    // Staff can only see invoices from their branch
+    ...(user.role !== 'owner' && branchId ? { branch_id: branchId } : {}),
+  }
   if (subscriberId) where.subscriber_id = subscriberId
+
+  // Owner can filter by branch_id query param
+  const qBranch = url.get('branch_id')
+  if (qBranch) where.branch_id = qBranch
 
   const [invoices, total] = await Promise.all([
     prisma.invoice.findMany({

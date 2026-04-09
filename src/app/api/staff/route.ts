@@ -3,15 +3,26 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
   const tenantId = user.tenantId as string
+  const branchId = user.branchId as string | undefined
+
+  const where: any = {
+    tenant_id: tenantId,
+    // Staff can only see staff in their own branch
+    ...(user.role !== 'owner' && branchId ? { branch_id: branchId } : {}),
+  }
+
+  // Owner can filter by branch_id query param
+  const qBranch = req.nextUrl.searchParams.get('branch_id')
+  if (qBranch) where.branch_id = qBranch
 
   const staff = await prisma.staff.findMany({
-    where: { tenant_id: tenantId },
+    where,
     include: {
       collector_permission: true,
       operator_permission: true,
