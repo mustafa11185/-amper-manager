@@ -227,16 +227,36 @@ model StoreOrder {
 }
 
 model TrialRequest {
-  id          String   @id @default(uuid())
-  name        String
-  phone       String
-  governorate String?
-  generator_count Int  @default(1)
-  notes       String?
-  status      String   @default("new")
-  contacted_at DateTime?
-  created_at  DateTime @default(now())
+  id              String    @id @default(uuid())
+  name            String
+  phone           String
+  governorate     String?
+  generator_count Int       @default(1)
+  subscriber_count Int?     @default(0)
+  plan_interest   String?   // "starter" | "pro" | "business" | "corporate" | "fleet"
+  billing_period  String?   // "monthly" | "quarterly" | "biannual" | "annual"
+  notes           String?
+  source          String    @default("landing")
+  status          String    @default("new")
+  contacted_at    DateTime?
+  created_at      DateTime  @default(now())
+  @@index([status, created_at])
   @@map("trial_requests")
+}
+
+model ContactInquiry {
+  id           String    @id @default(uuid())
+  name         String
+  phone        String
+  email        String?
+  governorate  String?
+  inquiry_type String    @default("general")  // general | sales | support | partnership | demo
+  message      String
+  status       String    @default("new")
+  responded_at DateTime?
+  created_at   DateTime  @default(now())
+  @@index([status, created_at])
+  @@map("contact_inquiries")
 }
 
 model PlanChangeLog {
