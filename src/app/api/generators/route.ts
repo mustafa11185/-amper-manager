@@ -26,7 +26,7 @@ export async function GET() {
     include: {
       branch: { select: { name: true } },
       iot_devices: { select: { is_online: true, last_seen: true } },
-      engines: { select: { id: true } },
+      engines: { select: { id: true, name: true } },
     },
     orderBy: { created_at: 'asc' },
   }) as any[]
@@ -58,6 +58,7 @@ export async function GET() {
       return {
         id: gen.id,
         name: gen.name,
+        branch_id: gen.branch_id,
         branch_name: gen.branch.name,
         run_status: gen.run_status,
         fuel_level_pct: gen.fuel_level_pct,
@@ -65,6 +66,7 @@ export async function GET() {
         last_seen: lastSeen,
         latest_temp: latestTemp?.temp_celsius ?? null,
         latest_fuel_pct: latestFuel?.fuel_level_percent ?? null,
+        engines: gen.engines.map((e: any) => ({ id: e.id, name: e.name })),
       }
     })
   )

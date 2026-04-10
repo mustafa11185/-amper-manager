@@ -30,10 +30,23 @@ export async function GET() {
     // Read from tenants.plan (admin source of truth)
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { plan: true },
+      select: {
+        plan: true,
+        feature_overrides: true,
+        trial_plan: true,
+        trial_plan_until: true,
+        has_used_trial: true,
+      },
     })
     const rawPlan = tenant?.plan ?? 'starter'
-    const planName = PLAN_NAME_MAP[rawPlan] ?? rawPlan
+    let planName = PLAN_NAME_MAP[rawPlan] ?? rawPlan
+
+    // Trial active? Promote to trial plan
+    const trialActive = tenant?.trial_plan && tenant?.trial_plan_until && tenant.trial_plan_until > new Date()
+    if (trialActive && tenant?.trial_plan) {
+      planName = tenant.trial_plan
+    }
+
     const limits = PLAN_LIMITS[planName] ?? PLAN_LIMITS.starter
 
     // Check tenant_plans for overrides
@@ -47,6 +60,13 @@ export async function GET() {
       original_plan: rawPlan,
       expires_at: ov?.expires_at ?? null,
       is_active: ov?.is_active ?? true,
+      // À-la-carte feature overrides (force-enabled by admin)
+      feature_overrides: tenant?.feature_overrides ?? [],
+      // Free trial info
+      trial_active: trialActive,
+      trial_plan: tenant?.trial_plan ?? null,
+      trial_plan_until: tenant?.trial_plan_until ?? null,
+      has_used_trial: tenant?.has_used_trial ?? false,
       limits: {
         max_subscribers: ov?.max_subscribers ?? limits.max_subscribers,
         max_staff: ov?.max_staff ?? limits.max_staff,

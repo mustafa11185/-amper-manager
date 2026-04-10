@@ -164,6 +164,30 @@ export async function GET() {
     }))
     const successPayments = onlinePayments.filter(p => p.status === 'success')
 
+    // ── NEW: IoT enrichments ──
+    const [fuelTheftCount, overloadCount, voltageCriticalCount, fuelCostThisMonth] = await Promise.all([
+      prisma.fuelEvent.count({
+        where: { tenant_id: tenantId, type: 'theft_suspected', occurred_at: { gte: monthStart } },
+      }),
+      prisma.overloadEvent.count({
+        where: { tenant_id: tenantId, detected_at: { gte: monthStart } },
+      }),
+      prisma.voltageEvent.count({
+        where: {
+          tenant_id: tenantId,
+          type: { in: ['low_critical', 'high_critical'] },
+          detected_at: { gte: monthStart },
+        },
+      }),
+      prisma.fuelConsumption.aggregate({
+        _sum: { cost_iqd: true },
+        where: { tenant_id: tenantId, window_end: { gte: monthStart } },
+      }),
+    ])
+    const cashRevenue = Number(cashThisMonth._sum.amount_paid ?? 0)
+    const fuelCost = Number(fuelCostThisMonth._sum.cost_iqd ?? 0)
+    const netProfitThisMonth = cashRevenue - fuelCost - totalExpenses
+
     return NextResponse.json({
       financial: {
         monthly_revenue: monthlyRevenue,
@@ -171,6 +195,14 @@ export async function GET() {
         online_this_month: Number(onlineThisMonth._sum.amount ?? 0),
         total_debt: Number(totalDebtAgg._sum.total_debt ?? 0),
         collection_rate: totalInvoices > 0 ? Math.round((paidInvoices / totalInvoices) * 100) : 0,
+        // NEW
+        fuel_cost_this_month: fuelCost,
+        net_profit_this_month: netProfitThisMonth,
+      },
+      iot_summary: {
+        fuel_theft_incidents: fuelTheftCount,
+        overload_incidents: overloadCount,
+        voltage_critical_incidents: voltageCriticalCount,
       },
       subscribers: {
         total: totalActive, gold_count: goldCount, normal_count: normalCount,

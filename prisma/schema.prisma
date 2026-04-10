@@ -84,6 +84,17 @@ model Tenant {
   custom_max_generators Int?
   custom_max_subscribers Int?
   app_access_code       String?               @unique
+  // WhatsApp alerts (for IoT critical events)
+  alert_phone           String?               // E.g., "9647801234567"
+  alert_provider        String?               // "callmebot" | "wasender" | "twilio"
+  alert_api_key         String?
+  alerts_enabled        Boolean               @default(false)
+  // À-la-carte feature overrides — features force-enabled regardless of plan
+  feature_overrides     String[]              @default([])
+  // Free trial of higher plan
+  trial_plan            String?               // e.g., "business" while on "pro"
+  trial_plan_until      DateTime?
+  has_used_trial        Boolean               @default(false)
   created_at            DateTime              @default(now())
   updated_at            DateTime              @updatedAt
   modules               TenantModule[]
@@ -305,6 +316,7 @@ model Generator {
   fuel_level_pct        Float?
   tank_full_dist_cm     Float?
   tank_empty_dist_cm    Float?
+  tank_capacity_liters  Float?    // Total tank capacity for fuel theft cost estimation
   last_fuel_update      DateTime?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
@@ -327,7 +339,12 @@ model Engine {
   name                String
   model               String?
   oil_change_hours    Int       @default(250)
+  air_filter_hours    Int       @default(500)
+  full_service_hours  Int       @default(1000)
   runtime_hours       Decimal   @default(0) @db.Decimal(10,2)
+  hours_at_last_oil   Decimal   @default(0) @db.Decimal(10,2)
+  hours_at_last_filter Decimal  @default(0) @db.Decimal(10,2)
+  hours_at_last_service Decimal @default(0) @db.Decimal(10,2)
   last_oil_change_at  DateTime?
   ds18b20_address     String?
   gold_ct_pin         Int?
@@ -337,8 +354,27 @@ model Engine {
   generator           Generator @relation(fields: [generator_id], references: [id], onDelete: Cascade)
   fuel_logs           FuelLog[]
   temperature_logs    TemperatureLog[]
+  iot_devices         IotDeviceEngine[]
+  maintenance_logs    MaintenanceLog[]
   @@map("engines")
 }
+
+model MaintenanceLog {
+  id            String   @id @default(uuid())
+  tenant_id     String
+  engine_id     String
+  type          String   // "oil_change" | "air_filter" | "full_service" | "custom"
+  description   String?
+  hours_at_service Decimal @db.Decimal(10,2)
+  cost          Decimal? @db.Decimal(12,2)
+  performed_by  String?
+  performed_at  DateTime @default(now())
+  engine        Engine   @relation(fields: [engine_id], references: [id], onDelete: Cascade)
+  @@index([engine_id, performed_at])
+  @@index([tenant_id, performed_at])
+  @@map("maintenance_logs")
+}
+
 
 // ─── SUBSCRIBER ───────────────────────────────────────────────
 
@@ -601,16 +637,268 @@ model DeliveryRecord {
 // ─── IOT ─────────────────────────────────────────────────────
 
 model IotDevice {
-  id           String    @id @default(uuid())
-  generator_id String
-  device_token String    @unique @default(uuid())
-  device_type  String    @default("esp32")
-  is_online    Boolean   @default(false)
-  last_seen    DateTime?
-  firmware     String?
-  created_at   DateTime  @default(now())
-  generator    Generator @relation(fields: [generator_id], references: [id])
+  id                  String    @id @default(uuid())
+  generator_id        String
+  // New: tenant + branch for multi-engine support
+  tenant_id           String?
+  branch_id           String?
+  name                String?
+  // Auth
+  device_token        String    @unique @default(uuid())
+  device_type         String    @default("esp32")
+  // QR Pairing (new)
+  pairing_code        String?   @unique
+  pairing_expires_at  DateTime?
+  paired_at           DateTime?
+  // Status
+  is_online           Boolean   @default(false)
+  is_active           Boolean   @default(true)
+  last_seen           DateTime?
+  last_heartbeat      DateTime?
+  last_telemetry      DateTime?
+  firmware            String?
+  // Metadata
+  sensors_config      Json?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt @default(now())
+  // Relations
+  generator           Generator @relation(fields: [generator_id], references: [id])
+  engines             IotDeviceEngine[]
+  telemetry_records   IotTelemetry[]
+  fuel_events         FuelEvent[]
+  @@index([tenant_id, branch_id])
+  @@index([pairing_code])
   @@map("iot_devices")
+}
+
+model IotDeviceEngine {
+  id          String    @id @default(uuid())
+  device_id   String
+  engine_id   String
+  temp_pin    Int?
+  fuel_pin    Int?
+  current_pin Int?
+  created_at  DateTime  @default(now())
+  device      IotDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  engine      Engine    @relation(fields: [engine_id], references: [id], onDelete: Cascade)
+  @@unique([device_id, engine_id])
+  @@map("iot_device_engines")
+}
+
+model IotTelemetry {
+  id            String    @id @default(uuid())
+  device_id     String
+  engine_id     String?
+  temperature_c Float?
+  fuel_pct      Float?
+  current_a     Float?
+  voltage_v     Float?
+  oil_status    String?
+  run_status    Boolean?
+  recorded_at   DateTime  @default(now())
+  device        IotDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  @@index([device_id, recorded_at])
+  @@index([engine_id, recorded_at])
+  @@map("iot_telemetry")
+}
+
+// Hourly snapshot of fuel consumption — used for L/h + profitability calculations
+model FuelConsumption {
+  id              String   @id @default(uuid())
+  tenant_id       String
+  branch_id       String
+  generator_id    String
+  device_id       String?
+  // Window
+  window_start    DateTime
+  window_end      DateTime @default(now())
+  // Measurements
+  fuel_pct_start  Float
+  fuel_pct_end    Float
+  liters_consumed Float    // Estimated using tank_capacity
+  cost_iqd        Decimal? @db.Decimal(12,2)
+  // Engine load during window
+  avg_current_a   Float?
+  runtime_minutes Int      // How many minutes engine was running in this window
+  liters_per_hour Float?
+  @@index([generator_id, window_end])
+  @@index([tenant_id, window_end])
+  @@map("fuel_consumption")
+}
+
+model VoltageEvent {
+  id            String   @id @default(uuid())
+  tenant_id     String
+  branch_id     String
+  generator_id  String
+  device_id     String?
+  type          String   // "low_warning" | "low_critical" | "high_warning" | "high_critical"
+  voltage       Float    // Measured voltage at the time
+  threshold     Float    // The threshold that was crossed
+  duration_sec  Int?     // How long the event lasted (filled when resolved)
+  detected_at   DateTime @default(now())
+  resolved_at   DateTime?
+  is_resolved   Boolean  @default(false)
+  notes         String?
+  @@index([tenant_id, branch_id, detected_at])
+  @@index([generator_id, detected_at])
+  @@map("voltage_events")
+}
+
+model OverloadEvent {
+  id                String   @id @default(uuid())
+  tenant_id         String
+  branch_id         String
+  generator_id      String
+  device_id         String?
+  measured_amps     Float    // Actual current draw
+  subscribed_amps   Float    // Sum of subscribers' amperage
+  excess_amps       Float    // measured - subscribed
+  excess_pct        Float    // (excess / subscribed) * 100
+  active_subs_count Int      // Number of active subscribers at the time
+  detected_at       DateTime @default(now())
+  is_resolved       Boolean  @default(false)
+  notes             String?
+  @@index([tenant_id, branch_id, detected_at])
+  @@index([generator_id, detected_at])
+  @@map("overload_events")
+}
+
+model FuelEvent {
+  id            String    @id @default(uuid())
+  tenant_id     String
+  branch_id     String
+  device_id     String
+  generator_id  String?
+  type          String    // "theft_suspected" | "refill" | "leak_suspected"
+  fuel_before   Float     // Percentage before the event
+  fuel_after    Float     // Percentage after the event
+  delta_pct     Float     // fuel_after - fuel_before (negative = drop)
+  liters_est    Float?    // Estimated liters (if tank capacity known)
+  cost_est_iqd  Decimal?  @db.Decimal(12,2)
+  occurred_at   DateTime  @default(now())
+  is_resolved   Boolean   @default(false)
+  notes         String?
+  device        IotDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  @@index([tenant_id, branch_id, occurred_at])
+  @@index([type, occurred_at])
+  @@map("fuel_events")
+}
+
+// ─── PARTNERSHIPS ─────────────────────────────────────────────
+
+model Partner {
+  id              String    @id @default(uuid())
+  tenant_id       String
+  name            String
+  phone           String?
+  national_id     String?
+  notes           String?
+  is_active       Boolean   @default(true)
+  // Optional: read-only login for partner (Corporate plan only)
+  access_code     String?   @unique  // 6-digit code
+  joined_at       DateTime  @default(now())
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt @default(now())
+  shares          PartnerShare[]
+  contributions   PartnerContribution[]
+  withdrawals     PartnerWithdrawal[]
+  @@index([tenant_id, is_active])
+  @@map("partners")
+}
+
+model PartnerShare {
+  id              String    @id @default(uuid())
+  tenant_id       String
+  partner_id      String
+  // Scope of the share
+  scope_type      String    // "tenant" | "branch" | "generator"
+  scope_id        String?   // null if scope_type = "tenant"
+  percentage      Decimal   @db.Decimal(5,2)  // 0.00 - 100.00
+  effective_from  DateTime  @default(now())
+  effective_to    DateTime?
+  notes           String?
+  created_at      DateTime  @default(now())
+  partner         Partner @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  @@index([tenant_id, scope_type, scope_id])
+  @@index([partner_id, effective_from])
+  @@map("partner_shares")
+}
+
+model PartnerContribution {
+  id              String    @id @default(uuid())
+  tenant_id       String
+  partner_id      String
+  amount          Decimal   @db.Decimal(14,2)
+  type            String    // "capital" | "loan" | "expense_payment" | "other"
+  description     String?
+  occurred_at     DateTime  @default(now())
+  created_at      DateTime  @default(now())
+  partner         Partner @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  @@index([tenant_id, occurred_at])
+  @@index([partner_id, occurred_at])
+  @@map("partner_contributions")
+}
+
+model PartnerWithdrawal {
+  id                  String    @id @default(uuid())
+  tenant_id           String
+  partner_id          String
+  amount              Decimal   @db.Decimal(14,2)
+  type                String    // "profit_distribution" | "personal_withdrawal" | "salary"
+  // If linked to a profit distribution
+  distribution_id     String?
+  period_month        Int?
+  period_year         Int?
+  description         String?
+  occurred_at         DateTime  @default(now())
+  created_at          DateTime  @default(now())
+  partner             Partner @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  distribution        ProfitDistribution? @relation(fields: [distribution_id], references: [id], onDelete: SetNull)
+  @@index([tenant_id, occurred_at])
+  @@index([partner_id, occurred_at])
+  @@index([distribution_id])
+  @@map("partner_withdrawals")
+}
+
+model ProfitDistribution {
+  id              String    @id @default(uuid())
+  tenant_id       String
+  // Scope (matches what shares filter on)
+  scope_type      String    // "tenant" | "branch" | "generator"
+  scope_id        String?
+  // Period
+  period_month    Int
+  period_year     Int
+  // Snapshot of the math at distribution time (so future changes don't affect history)
+  total_revenue   Decimal   @db.Decimal(14,2)
+  total_costs     Decimal   @db.Decimal(14,2)
+  net_profit      Decimal   @db.Decimal(14,2)
+  // Status
+  is_finalized    Boolean   @default(false)
+  finalized_at    DateTime?
+  notes           String?
+  created_at      DateTime  @default(now())
+  withdrawals     PartnerWithdrawal[]
+  @@index([tenant_id, period_year, period_month])
+  @@index([scope_type, scope_id])
+  @@map("profit_distributions")
+}
+
+model KioskScreen {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  branch_id   String
+  name        String
+  // Public access token used in the URL
+  token       String   @unique @default(uuid())
+  is_active   Boolean  @default(true)
+  last_seen   DateTime?
+  user_agent  String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt @default(now())
+  @@index([tenant_id, branch_id])
+  @@map("kiosk_screens")
 }
 
 model FuelLog {

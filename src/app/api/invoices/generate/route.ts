@@ -280,6 +280,42 @@ export async function POST(req: NextRequest) {
       console.log('Cycle reset (discount requests) failed:', e.message)
     }
 
+    // 3. ═══ تكامل مع نظام الشركاء ═══
+    // اقتراح توزيع أرباح الشهر السابق إذا لم يتم بعد
+    try {
+      const prevMonth = billingMonth === 1 ? 12 : billingMonth - 1
+      const prevYear = billingMonth === 1 ? billingYear - 1 : billingYear
+
+      const partnersCount = await prisma.partner.count({
+        where: { tenant_id: tenantId, is_active: true },
+      })
+
+      if (partnersCount > 0) {
+        const existingDistribution = await prisma.profitDistribution.findFirst({
+          where: {
+            tenant_id: tenantId,
+            period_month: prevMonth,
+            period_year: prevYear,
+            scope_type: 'tenant',
+          },
+        })
+
+        if (!existingDistribution) {
+          await prisma.notification.create({
+            data: {
+              branch_id, tenant_id: tenantId,
+              type: 'partner_distribution_suggested',
+              title: '💰 توزيع أرباح الشهر السابق',
+              body: `لم تقم بتوزيع أرباح ${prevMonth}/${prevYear} على الشركاء بعد — راجع الآن`,
+              payload: { period_month: prevMonth, period_year: prevYear, partners_count: partnersCount },
+            },
+          })
+        }
+      }
+    } catch (e: any) {
+      console.log('Partner distribution check failed:', e.message)
+    }
+
     return NextResponse.json({
       ok: true,
       generated: totalCreated,
