@@ -13,6 +13,7 @@
     "@prisma/client": "^7.5.0",
     "@types/leaflet": "^1.9.21",
     "bcryptjs": "^3.0.3",
+    "fast-xml-parser": "^5.5.11",
     "firebase-admin": "^13.7.0",
     "idb": "^8.0.3",
     "leaflet": "^1.9.4",
