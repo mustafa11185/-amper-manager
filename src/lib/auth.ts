@@ -129,19 +129,38 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.role = (user as any).role
         token.tenantId = (user as any).tenantId
         token.branchId = (user as any).branchId
         token.branchName = (user as any).branchName
         token.plan = (user as any).plan
+        token.planRefreshedAt = Date.now()
         token.canCollect = (user as any).canCollect
         token.canOperate = (user as any).canOperate
         token.isOwnerActing = (user as any).isOwnerActing
         token.isDualRole = (user as any).isDualRole
         token.canGiveDiscount = (user as any).canGiveDiscount
         token.discountMaxAmount = (user as any).discountMaxAmount
+      } else if (token.tenantId) {
+        // Refresh plan from DB at most once per minute. Without this, the
+        // token's `plan` is frozen at login time — if company-admin upgrades
+        // (or downgrades) a tenant, the manager would see stale plan info
+        // until they log out. Cheap (1 column) and bounded (1 hit per minute).
+        const lastRefresh = (token.planRefreshedAt as number | undefined) ?? 0
+        if (Date.now() - lastRefresh > 60_000) {
+          try {
+            const t = await prisma.tenant.findUnique({
+              where: { id: token.tenantId as string },
+              select: { plan: true },
+            })
+            if (t) token.plan = t.plan
+          } catch (err: any) {
+            console.warn('[auth/jwt] plan refresh skipped:', err.message)
+          }
+          token.planRefreshedAt = Date.now()
+        }
       }
       return token
     },
