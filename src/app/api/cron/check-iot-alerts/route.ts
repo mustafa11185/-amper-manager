@@ -41,7 +41,31 @@ export async function GET() {
   return POST()
 }
 
+// In-memory snapshot of the last cron execution. Persists across
+// invocations on the same warm instance and is exposed via the
+// /status sibling endpoint for monitoring.
+type CronRunStatus = {
+  started_at: string
+  finished_at: string
+  duration_ms: number
+  devices_checked: number
+  alerts_created: number
+  oil_alerts: number
+  fuel_alerts: number
+  ok: boolean
+  error?: string
+}
+let lastRun: CronRunStatus | null = null
+export function getLastCronRun(): CronRunStatus | null {
+  return lastRun
+}
+
 export async function POST() {
+  const startedAt = new Date()
+  const startMs = startedAt.getTime()
+  let oilAlerts = 0
+  let fuelAlerts = 0
+  console.log(`[cron/check-iot-alerts] start ${startedAt.toISOString()}`)
   try {
     const now = new Date()
     const offlineThreshold = new Date(now.getTime() - OFFLINE_MINUTES * 60 * 1000)
@@ -695,14 +719,45 @@ export async function POST() {
           },
         })
         createdAlerts++
+        oilAlerts++
       }
     } catch (oilErr: any) {
       console.warn('[cron/check-iot-alerts oil]', oilErr.message)
     }
 
+    const finishedAt = new Date()
+    const durationMs = finishedAt.getTime() - startMs
+    lastRun = {
+      started_at: startedAt.toISOString(),
+      finished_at: finishedAt.toISOString(),
+      duration_ms: durationMs,
+      devices_checked: devices.length,
+      alerts_created: createdAlerts,
+      oil_alerts: oilAlerts,
+      fuel_alerts: fuelAlerts,
+      ok: true,
+    }
+    console.log(
+      `[cron/check-iot-alerts] done ${finishedAt.toISOString()} ` +
+      `duration=${durationMs}ms devices=${devices.length} alerts=${createdAlerts} ` +
+      `(oil=${oilAlerts} fuel=${fuelAlerts})`
+    )
+
     return NextResponse.json({ ok: true, devices_checked: devices.length, alerts_created: createdAlerts })
   } catch (err: any) {
-    console.error('[cron/check-iot-alerts]', err)
+    const finishedAt = new Date()
+    lastRun = {
+      started_at: startedAt.toISOString(),
+      finished_at: finishedAt.toISOString(),
+      duration_ms: finishedAt.getTime() - startMs,
+      devices_checked: 0,
+      alerts_created: 0,
+      oil_alerts: oilAlerts,
+      fuel_alerts: fuelAlerts,
+      ok: false,
+      error: err.message,
+    }
+    console.error('[cron/check-iot-alerts] FAILED', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
