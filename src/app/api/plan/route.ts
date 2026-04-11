@@ -15,14 +15,17 @@ import { prisma } from '@/lib/prisma'
 //   12 months → 15%
 const PLAN_LIMITS: Record<string, any> = {
   starter:   { max_subscribers: 25,    max_staff: 1,   max_branches: 1,  online_payment: false, financial_reports: false, custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 0 },
-  pro:       { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 22000 },
-  business:  { max_subscribers: 300,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
-  corporate: { max_subscribers: 1000,  max_staff: 25,  max_branches: 15, online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 55000 },
+  // Branch limits represent TOTAL branches including the main one.
+  // Pro = main only (1), Business = main + 1 extra (2), Corporate = main + 2 extra (3).
+  pro:       { max_subscribers: 150,   max_staff: 5,   max_branches: 1,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 22000 },
+  business:  { max_subscribers: 500,   max_staff: 15,  max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
+  corporate: { max_subscribers: 2000,  max_staff: 50,  max_branches: 3,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 55000 },
   fleet:     { max_subscribers: 99999, max_staff: 9999,max_branches: 9999,online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: true,  price_iqd: 0 },
   // Old plan mappings (legacy DB rows)
   trial:     { max_subscribers: 25,    max_staff: 1,   max_branches: 1,  online_payment: false, financial_reports: false, custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 0 },
-  basic:     { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 22000 },
-  gold:      { max_subscribers: 400,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
+  // Legacy aliases — basic→pro, gold→business — kept in sync with new limits.
+  basic:     { max_subscribers: 150,   max_staff: 5,   max_branches: 1,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 22000 },
+  gold:      { max_subscribers: 500,   max_staff: 15,  max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
 }
 
 // Compute the per-month price after period discount.
