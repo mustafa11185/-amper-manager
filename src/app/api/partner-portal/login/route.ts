@@ -89,9 +89,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Issue a 30-day session, persisted in DB so it survives restarts.
+    // Issue a 6-month session, persisted in DB so it survives restarts.
+    // Long sessions match the partner usage pattern — they only check
+    // their balance every few weeks and shouldn't have to keep entering
+    // their code.
     const token = randomBytes(32).toString('hex')
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)
     await prisma.partnerSession.create({
       data: { partner_id: partner.id, token, expires_at: expiresAt },
     })
