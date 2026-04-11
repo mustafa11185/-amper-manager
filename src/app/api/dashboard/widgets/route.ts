@@ -336,6 +336,29 @@ export async function GET(req: NextRequest) {
       // oil pressure not in IoT yet — placeholder for future sensor
       if (minDueIn <= 0) alerts.push('maintenance')
 
+      // Days-based oil interval — varies by season because Iraqi
+      // generators run hotter in summer and need more frequent oil
+      // changes. Defaults: 15 days summer (Jun-Sep), 25 days winter
+      // (Dec-Feb), 20 days spring/autumn. These can be overridden
+      // per-engine when the schema columns are added; until then we
+      // use the seasonal defaults so the dashboard widget can show a
+      // useful estimate immediately.
+      const month = new Date().getMonth() + 1
+      const seasonalDays = (month >= 6 && month <= 9)
+        ? 15
+        : (month === 12 || month <= 2)
+          ? 25
+          : 20
+      const lastOilAt = e.last_oil_change_at as Date | null
+      let oilDaysSince: number | null = null
+      let oilDaysRemaining: number | null = null
+      if (lastOilAt) {
+        const ms = Date.now() - lastOilAt.getTime()
+        oilDaysSince = Math.floor(ms / (1000 * 60 * 60 * 24))
+        oilDaysRemaining = seasonalDays - oilDaysSince
+      }
+      if (oilDaysRemaining != null && oilDaysRemaining <= 0) alerts.push('oil_due')
+
       return {
         id: e.id,
         name: e.name,
@@ -348,10 +371,15 @@ export async function GET(req: NextRequest) {
         temperature_c: tele?.temperature_c ?? null,
         current_a: tele?.current_a ?? null,
         oil_pressure_bar: null, // reserved for future sensor
-        // Maintenance
+        // Maintenance — hours-based (legacy)
         maintenance_progress: maintProgress,
         next_due_in_hours: minDueIn,
         is_maintenance_due: minDueIn <= 0,
+        // Oil tracking — days-based (preferred for Iraqi market)
+        last_oil_change_at: lastOilAt?.toISOString() ?? null,
+        oil_interval_days: seasonalDays,
+        oil_days_since: oilDaysSince,
+        oil_days_remaining: oilDaysRemaining,
         // Per-engine alert flags
         alerts,
       }
