@@ -20,12 +20,17 @@ export const authOptions: NextAuthOptions = {
           // (Without select, Prisma fetches all columns and crashes if production DB
           // is missing any new column we added to the Tenant model — this broke owner
           // login after the IoT integration added many new optional columns.)
-          let tenant: { id: string; owner_name: string; phone: string; password: string; plan: string; is_active: boolean } | null = null
+          let tenant: { id: string; name: string; owner_name: string; phone: string; password: string; plan: string; is_active: boolean } | null = null
           try {
             tenant = await prisma.tenant.findUnique({
               where: { phone: credentials.phone },
               select: {
                 id: true,
+                // tenant.name is the meaningful project label set in the
+                // create-client wizard (e.g. "مولدة النور"). It's what the
+                // shell header should display, NOT branch.name (which is
+                // a boilerplate "الفرع الرئيسي").
+                name: true,
                 owner_name: true,
                 phone: true,
                 password: true,
@@ -46,6 +51,7 @@ export const authOptions: NextAuthOptions = {
             phone: tenant.phone,
             role: 'owner',
             tenantId: tenant.id,
+            tenantName: tenant.name,
             plan: tenant.plan,
           }
         } else {
@@ -66,6 +72,10 @@ export const authOptions: NextAuthOptions = {
                 can_operate: true,
                 is_owner_acting: true,
                 branch: { select: { name: true } },
+                // Pull the project name from the parent tenant so the
+                // staff dashboard header can show "مولدة النور" instead
+                // of the boilerplate "الفرع الرئيسي".
+                tenant: { select: { name: true } },
                 collector_permission: { select: { can_give_discount: true, discount_max_amount: true } },
               },
             })
@@ -115,6 +125,7 @@ export const authOptions: NextAuthOptions = {
             phone: staff.phone ?? undefined,
             role: staff.role,
             tenantId: staff.tenant_id,
+            tenantName: staff.tenant?.name,
             branchId: staff.branch_id,
             branchName: staff.branch?.name,
             canCollect: staff.can_collect,
@@ -133,6 +144,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role
         token.tenantId = (user as any).tenantId
+        token.tenantName = (user as any).tenantName
         token.branchId = (user as any).branchId
         token.branchName = (user as any).branchName
         token.plan = (user as any).plan
@@ -144,20 +156,23 @@ export const authOptions: NextAuthOptions = {
         token.canGiveDiscount = (user as any).canGiveDiscount
         token.discountMaxAmount = (user as any).discountMaxAmount
       } else if (token.tenantId) {
-        // Refresh plan from DB at most once per minute. Without this, the
-        // token's `plan` is frozen at login time — if company-admin upgrades
-        // (or downgrades) a tenant, the manager would see stale plan info
-        // until they log out. Cheap (1 column) and bounded (1 hit per minute).
+        // Refresh plan + tenant name from DB at most once per minute.
+        // Without this, the token's `plan` and `tenantName` are frozen at
+        // login time — admin upgrades/renames don't propagate until full
+        // logout. Single tenant query covers both fields.
         const lastRefresh = (token.planRefreshedAt as number | undefined) ?? 0
         if (Date.now() - lastRefresh > 60_000) {
           try {
             const t = await prisma.tenant.findUnique({
               where: { id: token.tenantId as string },
-              select: { plan: true },
+              select: { plan: true, name: true },
             })
-            if (t) token.plan = t.plan
+            if (t) {
+              token.plan = t.plan
+              token.tenantName = t.name
+            }
           } catch (err: any) {
-            console.warn('[auth/jwt] plan refresh skipped:', err.message)
+            console.warn('[auth/jwt] refresh skipped:', err.message)
           }
           token.planRefreshedAt = Date.now()
         }
@@ -168,6 +183,7 @@ export const authOptions: NextAuthOptions = {
       ;(session as any).user.id = token.sub
       ;(session as any).user.role = token.role
       ;(session as any).user.tenantId = token.tenantId
+      ;(session as any).user.tenantName = token.tenantName
       ;(session as any).user.branchId = token.branchId
       ;(session as any).user.branchName = token.branchName
       ;(session as any).user.plan = token.plan
