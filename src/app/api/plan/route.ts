@@ -27,33 +27,64 @@ export async function GET() {
   const tenantId = user.tenantId
 
   try {
-    // Read from tenants.plan (admin source of truth)
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: {
-        plan: true,
-        feature_overrides: true,
-        trial_plan: true,
-        trial_plan_until: true,
-        has_used_trial: true,
-      },
-    })
-    const rawPlan = tenant?.plan ?? 'starter'
+    // Defensive 2-stage fetch:
+    // Stage 1: try to get plan + new fields. If production DB is missing the
+    //          new columns, Prisma throws — we fall back to stage 2.
+    // Stage 2: fetch only `plan` (which always exists) — guarantees the user
+    //          gets the correct plan even if trial/overrides aren't supported yet.
+    let tenant: {
+      plan: string
+      feature_overrides?: string[]
+      trial_plan?: string | null
+      trial_plan_until?: Date | null
+      has_used_trial?: boolean
+    } | null = null
+
+    try {
+      tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          plan: true,
+          feature_overrides: true,
+          trial_plan: true,
+          trial_plan_until: true,
+          has_used_trial: true,
+        },
+      }) as any
+    } catch (err: any) {
+      console.warn('[plan] Stage 1 failed, falling back to plan-only:', err.message)
+      try {
+        const minimal = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { plan: true },
+        })
+        if (minimal) tenant = { plan: minimal.plan as any }
+      } catch (err2: any) {
+        console.error('[plan] Stage 2 also failed:', err2.message)
+      }
+    }
+
+    const rawPlan = (tenant?.plan ?? 'starter').toLowerCase()
     let planName = PLAN_NAME_MAP[rawPlan] ?? rawPlan
 
     // Trial active? Promote to trial plan
-    const trialActive = tenant?.trial_plan && tenant?.trial_plan_until && tenant.trial_plan_until > new Date()
+    const trialActive = !!(tenant?.trial_plan && tenant?.trial_plan_until && tenant.trial_plan_until > new Date())
     if (trialActive && tenant?.trial_plan) {
-      planName = tenant.trial_plan
+      planName = tenant.trial_plan.toLowerCase()
     }
 
     const limits = PLAN_LIMITS[planName] ?? PLAN_LIMITS.starter
 
-    // Check tenant_plans for overrides
-    const overrides = await prisma.$queryRaw`
-      SELECT * FROM tenant_plans WHERE tenant_id = ${tenantId} LIMIT 1
-    ` as any[]
-    const ov = overrides[0]
+    // Check tenant_plans for overrides (graceful if table missing)
+    let ov: any = null
+    try {
+      const overrides = await prisma.$queryRaw`
+        SELECT * FROM tenant_plans WHERE tenant_id = ${tenantId} LIMIT 1
+      ` as any[]
+      ov = overrides[0] ?? null
+    } catch (err: any) {
+      console.warn('[plan] tenant_plans lookup failed:', err.message)
+    }
 
     return NextResponse.json({
       plan_name: planName,
@@ -82,7 +113,21 @@ export async function GET() {
       },
     })
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    console.error('[plan] fatal error, returning starter as fallback:', e.message)
+    // Even on fatal error, return SOMETHING — never starve the client.
+    return NextResponse.json({
+      plan_name: 'starter',
+      original_plan: 'starter',
+      expires_at: null,
+      is_active: true,
+      feature_overrides: [],
+      trial_active: false,
+      trial_plan: null,
+      trial_plan_until: null,
+      has_used_trial: false,
+      limits: PLAN_LIMITS.starter,
+      _error: e.message,
+    })
   }
 }
 
