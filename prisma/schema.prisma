@@ -1019,16 +1019,34 @@ model KioskScreen {
 
 model FuelLog {
   id                  String   @id @default(uuid())
-  engine_id           String
+  // Engine link (legacy / per-engine sensor readings).
+  engine_id           String?
+  engine              Engine?  @relation(fields: [engine_id], references: [id])
+  // Generator link (the actual fuel tank — most generators have one
+  // shared tank, not per-engine sensors). Newer manual + IoT events
+  // are scoped to the generator.
+  generator_id        String?
+  // Event type — drives how the report categorises this row.
+  //   refill              → ➕ tank topped up
+  //   manual_deduction    → ➖ owner/operator manually logged use
+  //   iot_reading         → 📡 periodic sensor snapshot
+  //   theft_alert         → 🚨 cron detected unexplained drop
+  event_type          String   @default("iot_reading")
+  source              String   @default("iot")
+  // Staff who performed the action (NULL for IoT readings).
+  staff_id            String?
   fuel_level_percent  Float
   distance_cm         Float?
   fuel_added_liters   Float?
-  source              String   @default("iot")
+  // Snapshot of total tank liters AFTER this event — used by the
+  // report to draw the level chart without joining other tables.
+  liters_after        Float?
   cost_iqd            Decimal? @db.Decimal(12,2)
+  unit_price_iqd      Decimal? @db.Decimal(12,2)
   notes               String?
   logged_at           DateTime @default(now())
-  engine              Engine   @relation(fields: [engine_id], references: [id])
   @@index([engine_id, logged_at])
+  @@index([generator_id, logged_at])
   @@map("fuel_logs")
 }
 
