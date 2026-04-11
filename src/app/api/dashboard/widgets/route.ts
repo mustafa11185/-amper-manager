@@ -257,5 +257,114 @@ export async function GET(req: NextRequest) {
     console.warn('[widgets/maintenance]', err.message)
   }
 
-  return NextResponse.json({ kabinas, iot, partnership, renewal, maintenance })
+  // ─── 6. Site (generator-level) status ────────────────────
+  // Generator-wide info: fuel level, run status, total load (sum of
+  // engine currents), single-bus voltage. There may be multiple
+  // generators per branch — we surface the first active one for now.
+  let site: any = null
+  try {
+    const generators = await prisma.generator.findMany({
+      where: { branch_id: { in: branchIds }, is_active: true },
+      orderBy: { created_at: 'asc' },
+      select: {
+        id: true, name: true, branch_id: true,
+        run_status: true, fuel_level_pct: true,
+        tank_capacity_liters: true, last_fuel_update: true,
+      },
+      take: 1,
+    })
+    const g = generators[0]
+    if (g) {
+      // Latest IoT telemetry from any device on this generator (used for
+      // voltage + current sums when IoT is paired).
+      const tele = await prisma.iotTelemetry.findFirst({
+        where: { device: { generator_id: g.id } },
+        orderBy: { recorded_at: 'desc' },
+      }).catch(() => null)
+      site = {
+        id: g.id,
+        name: g.name,
+        run_status: g.run_status,
+        fuel_pct: g.fuel_level_pct,
+        tank_capacity_liters: g.tank_capacity_liters,
+        last_fuel_update: g.last_fuel_update,
+        voltage_v: tele?.voltage_v ?? null,
+        // total_load_a comes from summing per-engine currents below
+      }
+    }
+  } catch (err: any) {
+    console.warn('[widgets/site]', err.message)
+  }
+
+  // ─── 7. Engines (per-engine telemetry + maintenance) ────
+  // Per-engine readings — temperature, oil pressure, current — pulled
+  // from the latest IotTelemetry row for each engine_id. Mixes in the
+  // engine's runtime hours and computed maintenance progress so the
+  // adaptive engine widget can render everything in one card.
+  let engines: any[] = []
+  try {
+    const list = await prisma.engine.findMany({
+      where: { generator: { branch_id: { in: branchIds } } },
+      orderBy: { name: 'asc' },
+      include: {
+        generator: { select: { id: true, name: true, run_status: true } },
+      },
+    })
+    engines = await Promise.all(list.map(async (e) => {
+      const tele = await prisma.iotTelemetry.findFirst({
+        where: { engine_id: e.id },
+        orderBy: { recorded_at: 'desc' },
+      }).catch(() => null)
+      const totalH = Number(e.runtime_hours)
+      const sinceOil = totalH - Number(e.hours_at_last_oil)
+      const sinceFilter = totalH - Number(e.hours_at_last_filter)
+      const sinceService = totalH - Number(e.hours_at_last_service)
+      const oilDueIn = e.oil_change_hours - sinceOil
+      const filterDueIn = e.air_filter_hours - sinceFilter
+      const serviceDueIn = e.full_service_hours - sinceService
+      const minDueIn = Math.min(oilDueIn, filterDueIn, serviceDueIn)
+      // Maintenance progress = how far through the next-due interval
+      // we are (0% = just serviced, 100% = due now).
+      const oilProgress = Math.max(0, Math.min(1, sinceOil / e.oil_change_hours))
+      const filterProgress = Math.max(0, Math.min(1, sinceFilter / e.air_filter_hours))
+      const serviceProgress = Math.max(0, Math.min(1, sinceService / e.full_service_hours))
+      const maintProgress = Math.max(oilProgress, filterProgress, serviceProgress)
+
+      // Alert flags — used by the dashboard widget for color coding
+      const alerts: string[] = []
+      if (tele?.temperature_c != null && tele.temperature_c > 95) alerts.push('temperature')
+      // oil pressure not in IoT yet — placeholder for future sensor
+      if (minDueIn <= 0) alerts.push('maintenance')
+
+      return {
+        id: e.id,
+        name: e.name,
+        model: e.model,
+        generator_id: e.generator.id,
+        generator_name: e.generator.name,
+        is_running: e.generator.run_status,
+        runtime_hours: totalH,
+        // Live readings (null when no IoT paired)
+        temperature_c: tele?.temperature_c ?? null,
+        current_a: tele?.current_a ?? null,
+        oil_pressure_bar: null, // reserved for future sensor
+        // Maintenance
+        maintenance_progress: maintProgress,
+        next_due_in_hours: minDueIn,
+        is_maintenance_due: minDueIn <= 0,
+        // Per-engine alert flags
+        alerts,
+      }
+    }))
+
+    // Roll up total load on the site object
+    if (site) {
+      const total = engines.reduce((s, e) => s + (e.current_a ?? 0), 0)
+      site.total_load_a = total > 0 ? total : null
+    }
+  } catch (err: any) {
+    console.warn('[widgets/engines]', err.message)
+  }
+
+  return NextResponse.json({ kabinas, iot, partnership, renewal, maintenance, site, engines })
 }
