@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
         current_a: r.current_a ?? null,
         voltage_v: r.voltage_v ?? null,
         oil_status: r.oil_status ?? null,
+        oil_pressure_bar: r.oil_pressure_bar ?? null,
         run_status: r.run_status ?? null,
       })),
     })

@@ -338,17 +338,14 @@ export async function GET(req: NextRequest) {
 
       // Days-based oil interval — varies by season because Iraqi
       // generators run hotter in summer and need more frequent oil
-      // changes. Defaults: 15 days summer (Jun-Sep), 25 days winter
-      // (Dec-Feb), 20 days spring/autumn. These can be overridden
-      // per-engine when the schema columns are added; until then we
-      // use the seasonal defaults so the dashboard widget can show a
-      // useful estimate immediately.
+      // changes. Per-engine columns override the seasonal defaults
+      // (15 summer / 25 winter / 20 normal).
       const month = new Date().getMonth() + 1
       const seasonalDays = (month >= 6 && month <= 9)
-        ? 15
+        ? ((e as any).oil_summer_days ?? 15)
         : (month === 12 || month <= 2)
-          ? 25
-          : 20
+          ? ((e as any).oil_winter_days ?? 25)
+          : ((e as any).oil_normal_days ?? 20)
       const lastOilAt = e.last_oil_change_at as Date | null
       let oilDaysSince: number | null = null
       let oilDaysRemaining: number | null = null
@@ -370,7 +367,7 @@ export async function GET(req: NextRequest) {
         // Live readings (null when no IoT paired)
         temperature_c: tele?.temperature_c ?? null,
         current_a: tele?.current_a ?? null,
-        oil_pressure_bar: null, // reserved for future sensor
+        oil_pressure_bar: (tele as any)?.oil_pressure_bar ?? null,
         // Maintenance — hours-based (legacy)
         maintenance_progress: maintProgress,
         next_due_in_hours: minDueIn,

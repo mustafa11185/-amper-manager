@@ -367,6 +367,12 @@ model Engine {
   oil_change_hours    Int       @default(250)
   air_filter_hours    Int       @default(500)
   full_service_hours  Int       @default(1000)
+  // Days-based oil schedule. Iraqi market rotates by season because
+  // generators run hotter in summer. NULL → fall back to seasonal
+  // defaults (15/20/25). Set per-engine to override.
+  oil_summer_days     Int?
+  oil_winter_days     Int?
+  oil_normal_days     Int?
   runtime_hours       Decimal   @default(0) @db.Decimal(10,2)
   hours_at_last_oil   Decimal   @default(0) @db.Decimal(10,2)
   hours_at_last_filter Decimal  @default(0) @db.Decimal(10,2)
@@ -725,6 +731,7 @@ model IotTelemetry {
   current_a     Float?
   voltage_v     Float?
   oil_status    String?
+  oil_pressure_bar Float?
   run_status    Boolean?
   recorded_at   DateTime  @default(now())
   device        IotDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
@@ -1497,6 +1504,7 @@ model OperatorPermission {
   tenant_id              String
   can_log_hours          Boolean  @default(true)
   can_add_fuel           Boolean  @default(true)
+  can_record_oil_change  Boolean  @default(true)
   can_toggle_generator   Boolean  @default(false)
   can_manual_mode        Boolean  @default(false)
   can_view_iot           Boolean  @default(true)

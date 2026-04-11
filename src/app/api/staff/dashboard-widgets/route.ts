@@ -207,11 +207,57 @@ export async function GET() {
     console.warn('[staff-widgets/next]', err.message)
   }
 
+  // ─── Engines + oil status (per-engine, days-based) ───────
+  // Same shape the manager dashboard widgets API returns so the
+  // shared OilStatusCard widget can render against either source.
+  let engines: any[] = []
+  try {
+    const list = await prisma.engine.findMany({
+      where: { generator: { branch_id: branchId } },
+      orderBy: { name: 'asc' },
+      include: { generator: { select: { id: true, name: true, run_status: true } } },
+    })
+    const month = new Date().getMonth() + 1
+    const isSummer = month >= 6 && month <= 9
+    const isWinter = month === 12 || month <= 2
+    engines = list.map((e: any) => {
+      const seasonalDays = isSummer
+        ? (e.oil_summer_days ?? 15)
+        : isWinter
+          ? (e.oil_winter_days ?? 25)
+          : (e.oil_normal_days ?? 20)
+      const lastOilAt = e.last_oil_change_at as Date | null
+      let oilDaysSince: number | null = null
+      let oilDaysRemaining: number | null = null
+      if (lastOilAt) {
+        const ms = Date.now() - lastOilAt.getTime()
+        oilDaysSince = Math.floor(ms / (1000 * 60 * 60 * 24))
+        oilDaysRemaining = seasonalDays - oilDaysSince
+      }
+      return {
+        id: e.id,
+        name: e.name,
+        model: e.model,
+        generator_id: e.generator.id,
+        generator_name: e.generator.name,
+        is_running: e.generator.run_status,
+        runtime_hours: Number(e.runtime_hours),
+        last_oil_change_at: lastOilAt?.toISOString() ?? null,
+        oil_interval_days: seasonalDays,
+        oil_days_since: oilDaysSince,
+        oil_days_remaining: oilDaysRemaining,
+      }
+    })
+  } catch (err: any) {
+    console.warn('[staff-widgets/engines]', err.message)
+  }
+
   return NextResponse.json({
     collection,
     goal,
     kabinas,
     leaderboard,
     next_subscriber: nextSubscriber,
+    engines,
   })
 }

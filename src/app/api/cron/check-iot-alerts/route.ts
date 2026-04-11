@@ -609,6 +609,89 @@ export async function POST() {
       }
     }
 
+    // ════════════════════════════════════════════════════════
+    //  Oil-change due check (days-based, no IoT required)
+    // ════════════════════════════════════════════════════════
+    //
+    // Walks every engine and computes its days-until-next-oil based
+    // on the seasonal interval (per-engine override or default 15/
+    // 20/25). Emits up to 4 levels of notification per engine, each
+    // self-rate-limited to once per 24h via the recent-notification
+    // check.
+    try {
+      const allEngines = await prisma.engine.findMany({
+        include: {
+          generator: { select: { id: true, name: true, branch_id: true, branch: { select: { tenant_id: true } } } },
+        },
+      })
+      const month = new Date().getMonth() + 1
+      const isSummer = month >= 6 && month <= 9
+      const isWinter = month === 12 || month <= 2
+      for (const eng of allEngines) {
+        const e: any = eng
+        if (!e.last_oil_change_at) continue
+        const interval = isSummer
+          ? (e.oil_summer_days ?? 15)
+          : isWinter
+            ? (e.oil_winter_days ?? 25)
+            : (e.oil_normal_days ?? 20)
+        const ms = Date.now() - new Date(e.last_oil_change_at).getTime()
+        const daysSince = Math.floor(ms / (1000 * 60 * 60 * 24))
+        const daysRemaining = interval - daysSince
+
+        // Pick the most severe applicable level
+        let level: 'soon' | 'today' | 'overdue' | 'critical' | null = null
+        if (daysRemaining <= -5) level = 'critical'
+        else if (daysRemaining < 0) level = 'overdue'
+        else if (daysRemaining === 0) level = 'today'
+        else if (daysRemaining <= 3) level = 'soon'
+        if (!level) continue
+
+        // Rate-limit: one oil notification per engine per 24h
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+        const recent = await prisma.notification.findFirst({
+          where: {
+            tenant_id: e.generator.branch.tenant_id,
+            type: `oil_${level}`,
+            payload: { path: ['engine_id'], equals: e.id },
+            created_at: { gte: since },
+          },
+        }).catch(() => null)
+        if (recent) continue
+
+        const titleMap = {
+          soon: '🛢️ تغيير دهن قريب',
+          today: '⚠️ تغيير دهن مستحق',
+          overdue: '🚨 تغيير دهن متأخر',
+          critical: '⛔ المحرك في خطر',
+        }
+        const bodyMap = {
+          soon: `المحرك ${e.name} يحتاج تغيير دهن خلال ${daysRemaining} ${daysRemaining === 1 ? 'يوم' : 'أيام'}`,
+          today: `المحرك ${e.name} يحتاج تغيير دهن اليوم`,
+          overdue: `المحرك ${e.name} متأخر ${-daysRemaining} ${-daysRemaining === 1 ? 'يوم' : 'أيام'} عن تغيير الدهن`,
+          critical: `المحرك ${e.name} متأخر ${-daysRemaining} يوم — قد يضرّ بالمحرك بشكل دائم`,
+        }
+        await prisma.notification.create({
+          data: {
+            tenant_id: e.generator.branch.tenant_id,
+            branch_id: e.generator.branch_id,
+            type: `oil_${level}`,
+            title: titleMap[level],
+            body: bodyMap[level],
+            payload: {
+              engine_id: e.id,
+              engine_name: e.name,
+              days_remaining: daysRemaining,
+              level,
+            },
+          },
+        })
+        createdAlerts++
+      }
+    } catch (oilErr: any) {
+      console.warn('[cron/check-iot-alerts oil]', oilErr.message)
+    }
+
     return NextResponse.json({ ok: true, devices_checked: devices.length, alerts_created: createdAlerts })
   } catch (err: any) {
     console.error('[cron/check-iot-alerts]', err)

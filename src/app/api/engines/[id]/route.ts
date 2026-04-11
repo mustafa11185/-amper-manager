@@ -33,6 +33,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.air_filter_hours !== undefined) data.air_filter_hours = Number(body.air_filter_hours) || 500
     if (body.full_service_hours !== undefined) data.full_service_hours = Number(body.full_service_hours) || 1000
     if (body.runtime_hours !== undefined) data.runtime_hours = Number(body.runtime_hours)
+    // Days-based oil schedule per season — null clears the override.
+    if (body.oil_summer_days !== undefined) {
+      data.oil_summer_days = body.oil_summer_days == null ? null : Math.max(1, Math.min(60, Number(body.oil_summer_days)))
+    }
+    if (body.oil_winter_days !== undefined) {
+      data.oil_winter_days = body.oil_winter_days == null ? null : Math.max(1, Math.min(60, Number(body.oil_winter_days)))
+    }
+    if (body.oil_normal_days !== undefined) {
+      data.oil_normal_days = body.oil_normal_days == null ? null : Math.max(1, Math.min(60, Number(body.oil_normal_days)))
+    }
 
     const engine = await prisma.engine.update({ where: { id }, data })
     return NextResponse.json({ engine })
