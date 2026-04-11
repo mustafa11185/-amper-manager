@@ -46,6 +46,20 @@ export async function GET(req: NextRequest) {
       include: { branch: { select: { name: true } } },
     })
     const genIds = generators.map((g) => g.id)
+    // Backward-compat: collect engine IDs so we can also catch
+    // pre-upgrade FuelLog rows that only had engine_id set.
+    const engineIds = await prisma.engine.findMany({
+      where: { generator_id: { in: genIds } },
+      select: { id: true },
+    }).then((rows) => rows.map((r) => r.id))
+    // Single helper used by every fuelLog query below — matches
+    // either the new generator_id column or the legacy engine link.
+    const fuelScope = (extra: any = {}) => ({
+      OR: [
+        { generator_id: { in: genIds }, ...extra },
+        ...(engineIds.length > 0 ? [{ engine_id: { in: engineIds }, ...extra }] : []),
+      ],
+    })
     if (genIds.length === 0) {
       return NextResponse.json({
         month: { start: monthStart.toISOString(), end: monthEnd.toISOString(), refills: 0, liters_refilled: 0, total_cost_iqd: 0, deductions: 0, liters_deducted: 0 },
@@ -58,10 +72,7 @@ export async function GET(req: NextRequest) {
 
     // ── Month summary ──
     const monthLogs = await prisma.fuelLog.findMany({
-      where: {
-        generator_id: { in: genIds },
-        logged_at: { gte: monthStart, lte: monthEnd },
-      },
+      where: fuelScope({ logged_at: { gte: monthStart, lte: monthEnd } }),
     })
     const monthSummary = {
       refills: monthLogs.filter((l) => l.event_type === 'refill').length,
@@ -75,10 +86,7 @@ export async function GET(req: NextRequest) {
 
     // ── Year summary ──
     const yearLogs = await prisma.fuelLog.findMany({
-      where: {
-        generator_id: { in: genIds },
-        logged_at: { gte: yearStart },
-      },
+      where: fuelScope({ logged_at: { gte: yearStart } }),
       select: { event_type: true, fuel_added_liters: true, cost_iqd: true },
     })
     const yearSummary = {
@@ -89,10 +97,18 @@ export async function GET(req: NextRequest) {
 
     // ── Per-generator ──
     const perGenerator = await Promise.all(generators.map(async (g) => {
+      // Per-generator we still need to scope by THIS generator's id +
+      // its engine ids (the helper above is global to the tenant).
+      const myEngineIds = await prisma.engine.findMany({
+        where: { generator_id: g.id },
+        select: { id: true },
+      }).then((rows) => rows.map((r) => r.id))
       const logs = await prisma.fuelLog.findMany({
         where: {
-          generator_id: g.id,
-          logged_at: { gte: yearStart },
+          OR: [
+            { generator_id: g.id, logged_at: { gte: yearStart } },
+            ...(myEngineIds.length > 0 ? [{ engine_id: { in: myEngineIds }, logged_at: { gte: yearStart } }] : []),
+          ],
         },
       })
       const refills = logs.filter((l) => l.event_type === 'refill')
@@ -114,21 +130,14 @@ export async function GET(req: NextRequest) {
 
     // ── Recent events (refills + deductions + theft) ──
     const recentEvents = await prisma.fuelLog.findMany({
-      where: {
-        generator_id: { in: genIds },
-        event_type: { in: ['refill', 'manual_deduction', 'theft_alert'] },
-      },
+      where: fuelScope({ event_type: { in: ['refill', 'manual_deduction', 'theft_alert'] } }),
       orderBy: { logged_at: 'desc' },
       take: 30,
     })
 
     // ── Theft alerts ──
     const theftAlerts = await prisma.fuelLog.findMany({
-      where: {
-        generator_id: { in: genIds },
-        event_type: 'theft_alert',
-        logged_at: { gte: monthStart },
-      },
+      where: fuelScope({ event_type: 'theft_alert', logged_at: { gte: monthStart } }),
       orderBy: { logged_at: 'desc' },
       take: 20,
     })

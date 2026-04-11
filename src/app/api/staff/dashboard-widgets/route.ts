@@ -215,7 +215,17 @@ export async function GET() {
     const list = await prisma.engine.findMany({
       where: { generator: { branch_id: branchId } },
       orderBy: { name: 'asc' },
-      include: { generator: { select: { id: true, name: true, run_status: true } } },
+      select: {
+        id: true,
+        name: true,
+        model: true,
+        runtime_hours: true,
+        last_oil_change_at: true,
+        oil_summer_days: true,
+        oil_winter_days: true,
+        oil_normal_days: true,
+        generator: { select: { id: true, name: true, run_status: true } },
+      },
     })
     const month = new Date().getMonth() + 1
     const isSummer = month >= 6 && month <= 9

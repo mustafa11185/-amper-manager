@@ -303,10 +303,27 @@ export async function GET(req: NextRequest) {
   // adaptive engine widget can render everything in one card.
   let engines: any[] = []
   try {
+    // EXPLICIT select so a missing column (e.g. forgot prisma migrate)
+    // fails loudly with a Prisma error instead of silently falling
+    // back to seasonal defaults and confusing the operator.
     const list = await prisma.engine.findMany({
       where: { generator: { branch_id: { in: branchIds } } },
       orderBy: { name: 'asc' },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        model: true,
+        runtime_hours: true,
+        oil_change_hours: true,
+        air_filter_hours: true,
+        full_service_hours: true,
+        hours_at_last_oil: true,
+        hours_at_last_filter: true,
+        hours_at_last_service: true,
+        last_oil_change_at: true,
+        oil_summer_days: true,
+        oil_winter_days: true,
+        oil_normal_days: true,
         generator: { select: { id: true, name: true, run_status: true } },
       },
     })

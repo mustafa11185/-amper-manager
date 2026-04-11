@@ -30,8 +30,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const url = new URL(req.url)
     const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 50)))
 
-    const logs = await prisma.fuelLog.findMany({
+    // Backward-compat: pre-upgrade FuelLog rows have engine_id only
+    // (no generator_id). We pull both shapes so the user's history
+    // doesn't suddenly look empty after the schema migration.
+    const engineIds = await prisma.engine.findMany({
       where: { generator_id: id },
+      select: { id: true },
+    }).then((rows) => rows.map((r) => r.id))
+
+    const logs = await prisma.fuelLog.findMany({
+      where: {
+        OR: [
+          { generator_id: id },
+          ...(engineIds.length > 0 ? [{ engine_id: { in: engineIds } }] : []),
+        ],
+      },
       orderBy: { logged_at: 'desc' },
       take: limit,
     })
