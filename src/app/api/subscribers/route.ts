@@ -129,6 +129,11 @@ export async function GET(req: NextRequest) {
         governorate: true,
         alley: true,
         alley_id: true,
+        // Include alley name from the relation so client can filter by either
+        // legacy text or alley_id and always have a display name to match.
+        // Without this, subscribers linked by alley_id only had `alley` empty
+        // and the POS filter could not match them against the alley dropdown.
+        alley_ref: { select: { id: true, name: true } },
         needs_attention: true,
         created_at: true,
         invoices: {
@@ -153,9 +158,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     subscribers: subscribers.map(s => {
       const inv = s.invoices?.[0] ?? null
+      // Resolve display name: prefer the relation's name, fall back to legacy text.
+      const alleyName = (s as any).alley_ref?.name ?? s.alley ?? null
       return {
         ...s,
         invoices: undefined,
+        alley_ref: undefined,
+        alley_name: alleyName,
+        // Keep legacy `alley` populated with the resolved name so old clients
+        // that read s['alley'] still work after migrating to alley_id.
+        alley: alleyName,
         amperage: Number(s.amperage),
         total_debt: Number(s.total_debt),
         current_invoice: inv ? {
