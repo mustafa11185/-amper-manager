@@ -62,6 +62,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const notes = body.notes ? String(body.notes).trim() : null
     const source = (body.source as string) ?? (isOwner ? 'manual_owner' : 'manual_staff')
 
+    // Optional credit support — same shape as the fuel refill route.
+    const isCredit = body.is_credit === true || body.payment_type === 'credit'
+    const isPartial = body.payment_type === 'partial'
+    const supplierId = body.supplier_id ? String(body.supplier_id) : null
+    let amountPaid = cost ?? 0
+    let amountOwed = 0
+    let paymentType: 'cash' | 'credit' | 'partial' = 'cash'
+
+    if (cost && (isCredit || isPartial)) {
+      if (!supplierId) {
+        return NextResponse.json({
+          error: 'يجب اختيار المورّد عند الشراء بالدين',
+          code: 'supplier_required',
+        }, { status: 400 })
+      }
+      const sup = await prisma.supplier.findUnique({ where: { id: supplierId } })
+      if (!sup || sup.tenant_id !== user.tenantId) {
+        return NextResponse.json({ error: 'المورّد غير صالح' }, { status: 400 })
+      }
+      if (isCredit) {
+        paymentType = 'credit'
+        amountPaid = 0
+        amountOwed = cost
+      } else {
+        paymentType = 'partial'
+        amountPaid = Math.max(0, Math.min(cost, Number(body.amount_paid ?? 0)))
+        amountOwed = cost - amountPaid
+      }
+    }
+
     const now = new Date()
 
     const result = await prisma.$transaction(async (tx) => {
@@ -88,7 +118,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       })
 
-      return { updated, log }
+      // Create the expense row when there's a cost.
+      let expense: any = null
+      if (cost && cost > 0) {
+        expense = await tx.expense.create({
+          data: {
+            branch_id: engine.generator.branch_id,
+            staff_id: user.id,
+            category: 'تغيير دهن',
+            amount: cost,
+            amount_paid: amountPaid,
+            amount_owed: amountOwed,
+            payment_type: paymentType,
+            supplier_id: supplierId,
+            description: `${engine.name}${notes ? ' — ' + notes : ''}`,
+            related_to: `oil_change:${log.id}`,
+          },
+        })
+      }
+
+      return { updated, log, expense }
     })
 
     // Compute days until next using current season + per-engine override

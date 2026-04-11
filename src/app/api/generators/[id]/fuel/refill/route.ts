@@ -76,6 +76,40 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const newPct = (newLiters / tankCap) * 100
     const totalCost = unitPrice != null ? unitPrice * liters : null
 
+    // Optional credit: if the user marks the refill as credit + picks
+    // a supplier, we ALSO create an Expense row tied to that supplier
+    // so the debt shows up in the supplier-debts report and the
+    // partner portal. Validation: credit/partial requires supplier_id.
+    const isCredit = body.is_credit === true || body.payment_type === 'credit'
+    const isPartial = body.payment_type === 'partial'
+    const supplierId = body.supplier_id ? String(body.supplier_id) : null
+    let amountPaid = totalCost ?? 0
+    let amountOwed = 0
+    let paymentType: 'cash' | 'credit' | 'partial' = 'cash'
+
+    if (totalCost && (isCredit || isPartial)) {
+      if (!supplierId) {
+        return NextResponse.json({
+          error: 'يجب اختيار المورّد عند الشراء بالدين',
+          code: 'supplier_required',
+        }, { status: 400 })
+      }
+      // Verify supplier ownership
+      const sup = await prisma.supplier.findUnique({ where: { id: supplierId } })
+      if (!sup || sup.tenant_id !== user.tenantId) {
+        return NextResponse.json({ error: 'المورّد غير صالح' }, { status: 400 })
+      }
+      if (isCredit) {
+        paymentType = 'credit'
+        amountPaid = 0
+        amountOwed = totalCost
+      } else {
+        paymentType = 'partial'
+        amountPaid = Math.max(0, Math.min(totalCost, Number(body.amount_paid ?? 0)))
+        amountOwed = totalCost - amountPaid
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.generator.update({
         where: { id },
@@ -98,7 +132,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           notes,
         },
       })
-      return { updated, log }
+
+      // Create the expense / debt row when there's a cost.
+      let expense: any = null
+      if (totalCost && totalCost > 0) {
+        expense = await tx.expense.create({
+          data: {
+            branch_id: generator.branch_id,
+            staff_id: user.id,
+            category: 'وقود',
+            amount: totalCost,
+            amount_paid: amountPaid,
+            amount_owed: amountOwed,
+            payment_type: paymentType,
+            supplier_id: supplierId,
+            description: `${liters.toFixed(0)} لتر${notes ? ' — ' + notes : ''}`,
+            related_to: `fuel_log:${log.id}`,
+          },
+        })
+      }
+
+      return { updated, log, expense }
     })
 
     return NextResponse.json({
