@@ -882,16 +882,38 @@ model Partner {
   national_id     String?
   notes           String?
   is_active       Boolean   @default(true)
-  // Optional: read-only login for partner (Corporate plan only)
+  // Optional: read-only login for partner (Business+ plan)
   access_code     String?   @unique  // 6-digit code
+  // What this specific partner is allowed to see in the portal.
+  // Owner controls this from partner_detail_screen. Default = empty {}.
+  // Keys mirror the toggles in the Flutter permissions sheet:
+  //   view_partners_list, view_partners_balances, view_revenue,
+  //   view_expenses, view_subscribers_count (default true),
+  //   view_iot_status, request_withdrawal, view_reports.
+  permissions     Json      @default("{}")
   joined_at       DateTime  @default(now())
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt @default(now())
   shares          PartnerShare[]
   contributions   PartnerContribution[]
   withdrawals     PartnerWithdrawal[]
+  sessions        PartnerSession[]
   @@index([tenant_id, is_active])
   @@map("partners")
+}
+
+// DB-backed partner login sessions. Replaces the in-memory token Map
+// (which got wiped on every Render restart and logged everyone out).
+model PartnerSession {
+  id          String   @id @default(uuid())
+  partner_id  String
+  token       String   @unique
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+  partner     Partner  @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  @@index([partner_id])
+  @@index([expires_at])
+  @@map("partner_sessions")
 }
 
 model PartnerShare {

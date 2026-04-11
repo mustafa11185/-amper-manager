@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const partnerId = getPartnerByToken(token)
+  const partnerId = await getPartnerByToken(token)
   if (!partnerId) return NextResponse.json({ error: 'invalid_token' }, { status: 401 })
 
   const partner = await prisma.partner.findUnique({
