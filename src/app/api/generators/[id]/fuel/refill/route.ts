@@ -58,12 +58,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const unitPrice = body.unit_price_iqd != null ? Number(body.unit_price_iqd) : null
     const notes = body.notes ? String(body.notes).trim() : null
 
-    // Compute new level
+    // Tank capacity is REQUIRED — without it the percentage math is
+    // meaningless. Reject loudly so the user fixes the generator config
+    // instead of silently storing data that never updates the level.
     const tankCap = generator.tank_capacity_liters ?? 0
+    if (tankCap <= 0) {
+      return NextResponse.json({
+        error: 'يجب تحديد سعة خزان الوقود في إعدادات المولدة قبل إضافة وقود',
+        code: 'tank_capacity_missing',
+      }, { status: 400 })
+    }
+
+    // Compute new level
     const currentPct = generator.fuel_level_pct ?? 0
-    const currentLiters = tankCap > 0 ? (currentPct * tankCap / 100) : 0
-    const newLiters = Math.min(tankCap > 0 ? tankCap : (currentLiters + liters), currentLiters + liters)
-    const newPct = tankCap > 0 ? (newLiters / tankCap) * 100 : currentPct
+    const currentLiters = (currentPct * tankCap) / 100
+    const newLiters = Math.min(tankCap, currentLiters + liters)
+    const newPct = (newLiters / tankCap) * 100
     const totalCost = unitPrice != null ? unitPrice * liters : null
 
     const result = await prisma.$transaction(async (tx) => {

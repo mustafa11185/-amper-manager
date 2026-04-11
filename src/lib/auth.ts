@@ -77,7 +77,7 @@ export const authOptions: NextAuthOptions = {
                 // of the boilerplate "الفرع الرئيسي".
                 tenant: { select: { name: true } },
                 collector_permission: { select: { can_give_discount: true, discount_max_amount: true } },
-                operator_permission: { select: { can_record_oil_change: true } },
+                operator_permission: { select: { can_record_oil_change: true, can_add_fuel: true } },
               },
             })
           } catch (err: any) {
@@ -137,6 +137,7 @@ export const authOptions: NextAuthOptions = {
             canGiveDiscount: cp?.can_give_discount ?? false,
             discountMaxAmount: Number(cp?.discount_max_amount ?? 0),
             canRecordOilChange: op?.can_record_oil_change ?? false,
+            canAddFuel: op?.can_add_fuel ?? false,
           }
         }
       }
@@ -159,6 +160,7 @@ export const authOptions: NextAuthOptions = {
         token.canGiveDiscount = (user as any).canGiveDiscount
         token.discountMaxAmount = (user as any).discountMaxAmount
         token.canRecordOilChange = (user as any).canRecordOilChange
+        token.canAddFuel = (user as any).canAddFuel
       } else if (token.tenantId) {
         // Refresh plan + tenant name from DB at most once per minute.
         // Without this, the token's `plan` and `tenantName` are frozen at
@@ -198,6 +200,7 @@ export const authOptions: NextAuthOptions = {
       ;(session as any).user.canGiveDiscount = token.canGiveDiscount
       ;(session as any).user.discountMaxAmount = token.discountMaxAmount
       ;(session as any).user.canRecordOilChange = token.canRecordOilChange
+      ;(session as any).user.canAddFuel = token.canAddFuel
       return session
     }
   },

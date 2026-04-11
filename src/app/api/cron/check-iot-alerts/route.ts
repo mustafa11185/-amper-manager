@@ -33,6 +33,14 @@ const VOLT_LOW_CRITICAL  = 190
 const VOLT_HIGH_WARNING  = 240
 const VOLT_HIGH_CRITICAL = 250
 
+// Vercel cron jobs invoke endpoints via GET, so expose the same
+// handler for both verbs. The function body is identical — GET just
+// delegates to POST so manual triggers (curl, monitoring tools)
+// continue to work either way.
+export async function GET() {
+  return POST()
+}
+
 export async function POST() {
   try {
     const now = new Date()
