@@ -16,9 +16,27 @@ export const authOptions: NextAuthOptions = {
         if (!credentials) return null
 
         if (credentials.role === 'owner') {
-          const tenant = await prisma.tenant.findUnique({
-            where: { phone: credentials.phone }
-          })
+          // Use explicit select so this query is resilient to schema additions.
+          // (Without select, Prisma fetches all columns and crashes if production DB
+          // is missing any new column we added to the Tenant model — this broke owner
+          // login after the IoT integration added many new optional columns.)
+          let tenant: { id: string; owner_name: string; phone: string; password: string; plan: string; is_active: boolean } | null = null
+          try {
+            tenant = await prisma.tenant.findUnique({
+              where: { phone: credentials.phone },
+              select: {
+                id: true,
+                owner_name: true,
+                phone: true,
+                password: true,
+                plan: true,
+                is_active: true,
+              },
+            }) as any
+          } catch (err: any) {
+            console.error('[auth/owner] tenant lookup failed:', err.message)
+            return null
+          }
           if (!tenant || !tenant.is_active) return null
           const valid = await bcrypt.compare(credentials.password, tenant.password)
           if (!valid) return null
@@ -31,16 +49,48 @@ export const authOptions: NextAuthOptions = {
             plan: tenant.plan,
           }
         } else {
-          const staff = await prisma.staff.findFirst({
-            where: { phone: credentials.phone, is_active: true },
-            include: { branch: true, collector_permission: true }
-          })
+          // Use explicit select for the same defensive reason as owner branch.
+          let staff: any
+          try {
+            staff = await prisma.staff.findFirst({
+              where: { phone: credentials.phone, is_active: true },
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                role: true,
+                tenant_id: true,
+                branch_id: true,
+                pin: true,
+                can_collect: true,
+                can_operate: true,
+                is_owner_acting: true,
+                branch: { select: { name: true } },
+                collector_permission: { select: { can_give_discount: true, discount_max_amount: true } },
+              },
+            })
+          } catch (err: any) {
+            console.error('[auth/staff] staff lookup failed:', err.message)
+            return null
+          }
           if (!staff) return null
 
-          // Check if account is locked
-          if ((staff as any).locked_until && new Date((staff as any).locked_until) > new Date()) {
-            const remaining = Math.ceil((new Date((staff as any).locked_until).getTime() - Date.now()) / 60000)
-            throw new Error(`الحساب مقفل لمدة ${remaining} دقيقة`)
+          // Check if account is locked (locked_until / login_attempts are raw-SQL columns)
+          try {
+            const lockRows = await prisma.$queryRawUnsafe<Array<{ locked_until: Date | null }>>(
+              `SELECT locked_until FROM staff WHERE id = $1 LIMIT 1`,
+              staff.id
+            )
+            const lockedUntil = lockRows[0]?.locked_until
+            if (lockedUntil && new Date(lockedUntil) > new Date()) {
+              const remaining = Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 60000)
+              throw new Error(`الحساب مقفل لمدة ${remaining} دقيقة`)
+            }
+          } catch (err: any) {
+            // If the query throws because of "locked"/"دقيقة" message, re-throw
+            if (err.message?.includes('مقفل')) throw err
+            // Otherwise (e.g. column doesn't exist) — skip the lock check
+            console.warn('[auth/staff] lock check skipped:', err.message)
           }
 
           if (staff.pin !== credentials.password) {
@@ -58,7 +108,7 @@ export const authOptions: NextAuthOptions = {
             `UPDATE staff SET login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1`, staff.id)
 
           // Allow all staff roles (collector, operator, accountant, cashier)
-          const cp = (staff as any).collector_permission
+          const cp = staff.collector_permission
           return {
             id: staff.id,
             name: staff.name,
