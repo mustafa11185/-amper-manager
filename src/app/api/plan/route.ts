@@ -3,16 +3,41 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+// Pricing rules (single source of truth across the platform):
+// • Minimum subscription = 3 months. There is NO monthly option.
+// • The number stored in `price_iqd` is the per-month rate when billing
+//   for 3 months (i.e. the "marketed" monthly price). Longer periods
+//   apply a discount on this base.
+//
+// Discount schedule (kept in sync with landing + Flutter + company-admin):
+//   3 months → 0%
+//   6 months → 5%
+//   12 months → 15%
 const PLAN_LIMITS: Record<string, any> = {
   starter:   { max_subscribers: 25,    max_staff: 1,   max_branches: 1,  online_payment: false, financial_reports: false, custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 0 },
-  pro:       { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 20000 },
-  business:  { max_subscribers: 300,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 30000 },
-  corporate: { max_subscribers: 1000,  max_staff: 25,  max_branches: 15, online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 50000 },
+  pro:       { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: true,  advanced_reports: false, api_access: false, white_label: false, price_iqd: 22000 },
+  business:  { max_subscribers: 300,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
+  corporate: { max_subscribers: 1000,  max_staff: 25,  max_branches: 15, online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: false, price_iqd: 55000 },
   fleet:     { max_subscribers: 99999, max_staff: 9999,max_branches: 9999,online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: true,  white_label: true,  price_iqd: 0 },
-  // Old plan mappings
+  // Old plan mappings (legacy DB rows)
   trial:     { max_subscribers: 25,    max_staff: 1,   max_branches: 1,  online_payment: false, financial_reports: false, custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 0 },
-  basic:     { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 15000 },
+  basic:     { max_subscribers: 100,   max_staff: 3,   max_branches: 2,  online_payment: true,  financial_reports: true,  custom_app: false, announcements: false, advanced_reports: false, api_access: false, white_label: false, price_iqd: 22000 },
   gold:      { max_subscribers: 400,   max_staff: 10,  max_branches: 5,  online_payment: true,  financial_reports: true,  custom_app: true,  announcements: true,  advanced_reports: true,  api_access: false, white_label: false, price_iqd: 35000 },
+}
+
+// Compute the per-month price after period discount.
+// This is what the UI displays as "X د.ع/شهر" for non-monthly periods.
+export function periodMonthlyPrice(baseMonthly: number, period: "quarterly" | "biannual" | "annual"): number {
+  if (baseMonthly === 0) return 0
+  const discount = period === "annual" ? 0.15 : period === "biannual" ? 0.05 : 0
+  return Math.round(baseMonthly * (1 - discount))
+}
+
+// Compute the total price the customer pays for the chosen period.
+export function periodTotalPrice(baseMonthly: number, period: "quarterly" | "biannual" | "annual"): number {
+  if (baseMonthly === 0) return 0
+  const months = period === "annual" ? 12 : period === "biannual" ? 6 : 3
+  return periodMonthlyPrice(baseMonthly, period) * months
 }
 
 const PLAN_NAME_MAP: Record<string, string> = {
