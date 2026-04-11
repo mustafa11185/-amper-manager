@@ -19,19 +19,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
     }
 
-    // Dedup: check if this offline payment was already synced
+    // ── Idempotency: client_uuid ──
+    // Offline payments may be retried multiple times by the device. The
+    // server MUST treat the same client_uuid as the same payment and
+    // return the same response shape on every call. Without this, a
+    // network blip during sync creates duplicate invoices.
+    //
+    // The check is scoped to the subscriber's tenant — never cross-tenant.
     if (client_uuid) {
       try {
-        const existing = await prisma.invoice.findFirst({
-          where: { notes: { contains: client_uuid } },
+        // Look up the subscriber to know its tenant before checking dedup.
+        const sub = await prisma.subscriber.findUnique({
+          where: { id: subscriber_id },
+          select: { tenant_id: true, name: true, total_debt: true },
         })
-        if (existing) {
-          return NextResponse.json({
-            ok: true, duplicate: true,
-            subscriber_name: (await prisma.subscriber.findUnique({ where: { id: subscriber_id }, select: { name: true } }))?.name,
+        if (sub) {
+          const existing = await prisma.invoice.findFirst({
+            where: {
+              tenant_id: sub.tenant_id,
+              notes: { contains: client_uuid },
+            },
+            select: { id: true, billing_month: true, amount_paid: true, total_amount_due: true },
           })
+          if (existing) {
+            // Return a response shape compatible with a fresh payment so the
+            // client treats it identically to a successful sync.
+            return NextResponse.json({
+              ok: true,
+              duplicate: true,
+              paid: Number(amount),
+              pay_type: pay_type || 'invoice',
+              billing_month: existing.billing_month,
+              remaining_debt: Number(sub.total_debt),
+              debt_reduced: 0,
+              invoices_updated: 1,
+              subscriber_name: sub.name,
+            })
+          }
         }
-      } catch {}
+      } catch (dedupErr) {
+        // Dedup failure must not block the payment — fall through to
+        // normal processing. Worst case: the unique constraint catches it.
+        console.warn('[POS dedup] check failed:', dedupErr)
+      }
     }
 
     const selectedMonth = billing_month || (new Date().getMonth() + 1)
