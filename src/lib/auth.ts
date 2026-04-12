@@ -77,7 +77,6 @@ export const authOptions: NextAuthOptions = {
                 // of the boilerplate "الفرع الرئيسي".
                 tenant: { select: { name: true } },
                 collector_permission: { select: { can_give_discount: true, discount_max_amount: true } },
-                operator_permission: { select: { can_record_oil_change: true, can_add_fuel: true } },
               },
             })
           } catch (err: any) {
@@ -85,6 +84,19 @@ export const authOptions: NextAuthOptions = {
             return null
           }
           if (!staff) return null
+
+          // Fetch operator permissions separately — wrapped in its own
+          // try-catch so a missing column (e.g. can_record_oil_change
+          // before prisma db push) does NOT break the entire login.
+          let op: { can_record_oil_change?: boolean; can_add_fuel?: boolean } | null = null
+          try {
+            op = await prisma.operatorPermission.findUnique({
+              where: { staff_id: staff.id },
+              select: { can_record_oil_change: true, can_add_fuel: true },
+            }) as any
+          } catch (opErr: any) {
+            console.warn('[auth/staff] operator permission lookup skipped:', opErr.message)
+          }
 
           // Check if account is locked (locked_until / login_attempts are raw-SQL columns)
           try {
@@ -120,7 +132,7 @@ export const authOptions: NextAuthOptions = {
 
           // Allow all staff roles (collector, operator, accountant, cashier)
           const cp = staff.collector_permission
-          const op = (staff as any).operator_permission
+          // op was fetched separately above (defensive, see comment).
           return {
             id: staff.id,
             name: staff.name,
