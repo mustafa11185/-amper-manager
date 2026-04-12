@@ -206,17 +206,18 @@ export async function POST(req: NextRequest) {
     }
 
     // meter_number (رقم الجوزة) is the user-facing identifier.
-    // serial_number is kept for backward compat but no longer auto-
-    // generated. If the client sends meter_number, it's saved there.
-    // If the client sends serial_number explicitly, it's saved too.
-    // Otherwise both stay NULL — no auto-generated codes.
+    // serial_number is kept for backward compat — we still generate a
+    // sequential number so the unique constraint is satisfied and the
+    // access-code generator has a sequence number to work with.
+    const seq = await prisma.subscriber.count({ where: { branch_id } }) + 1
+    const autoSerial = String(seq).padStart(4, '0')
 
     const subscriber = await prisma.subscriber.create({
       data: {
         tenant_id: tenantId,
         branch_id,
         generator_id,
-        serial_number: body.serial_number || meter_number || null,
+        serial_number: body.serial_number || meter_number || autoSerial,
         name,
         phone: phone || null,
         address: address || null,
