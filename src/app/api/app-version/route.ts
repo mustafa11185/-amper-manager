@@ -13,10 +13,15 @@ import { NextResponse } from 'next/server'
 // Update these values when you publish a new APK.
 // min_version: users BELOW this are forced to update (breaking changes).
 // latest_version: users BELOW this see a non-blocking "update available".
+// When you publish a new version:
+//   1. flutter build apk --release
+//   2. gh release create vX.Y.Z ~/Desktop/Amper-vX.Y.Z.apk --repo mustafa11185/amper-flutter
+//   3. Update min_version / latest_version / update_url below
+//   4. git push → Render deploys → users see "تحديث متاح"
 const APP_CONFIG = {
   min_version: '2.6.0',
   latest_version: '2.6.0',
-  update_url: 'https://amper.iq/download', // or Play Store link
+  update_url: 'https://github.com/mustafa11185/amper-flutter/releases/latest/download/Amper-v2.6.0.apk',
   changelog_ar: 'نظام الموردين + الكيوسك + الوقود والدهن + رصانة تسجيل الدخول',
 }
 
