@@ -185,4 +185,36 @@ export const pushTemplates = {
     title: '📄 إصدار فواتير',
     body: `تم إصدار ${count} فاتورة لشهر ${month}`,
   }),
+  // Oil maintenance alerts
+  oilDueSoon: (engineName: string, daysLeft: number) => ({
+    title: '🛢️ تغيير دهن قريب',
+    body: `المحرك ${engineName} يحتاج تغيير دهن خلال ${daysLeft} ${daysLeft <= 10 ? 'أيام' : 'يوم'}`,
+  }),
+  oilDueToday: (engineName: string) => ({
+    title: '⚠️ تغيير دهن مستحق',
+    body: `المحرك ${engineName} يحتاج تغيير دهن اليوم`,
+  }),
+  oilOverdue: (engineName: string, daysLate: number) => ({
+    title: '🚨 تغيير دهن متأخر',
+    body: `المحرك ${engineName} متأخر ${daysLate} يوم عن تغيير الدهن`,
+  }),
+  oilCritical: (engineName: string, daysLate: number) => ({
+    title: '⛔ المحرك في خطر',
+    body: `المحرك ${engineName} متأخر ${daysLate} يوم — قد يضرّ بالمحرك`,
+  }),
+  // Fuel alerts
+  fuelLow: (generatorName: string, pct: number) => ({
+    title: '⛽ وقود منخفض',
+    body: `${generatorName}: ${Math.round(pct)}% — تعبئة عاجلة`,
+  }),
+  // Supplier debt reminder
+  supplierDebtHigh: (supplierName: string, amount: number) => ({
+    title: '💰 دين مورّد مرتفع',
+    body: `${supplierName}: ${amount.toLocaleString()} د.ع مستحق`,
+  }),
+  // Expense added
+  expenseAdded: (category: string, amount: number) => ({
+    title: '💸 مصروف جديد',
+    body: `${category}: ${amount.toLocaleString()} د.ع`,
+  }),
 }

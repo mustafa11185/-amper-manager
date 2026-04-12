@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { sendPushToOwner, pushTemplates } from '@/lib/push'
 import { sendTenantAlert } from '@/lib/whatsapp-send'
 
 // Thresholds (can be moved to per-tenant settings later)
@@ -718,6 +719,21 @@ export async function POST() {
             },
           },
         })
+        // Push notification to the owner — so it pops up on their
+        // phone even if the app is closed.
+        try {
+          const pushMsg = level === 'soon'
+            ? pushTemplates.oilDueSoon(e.name, daysRemaining)
+            : level === 'today'
+              ? pushTemplates.oilDueToday(e.name)
+              : level === 'overdue'
+                ? pushTemplates.oilOverdue(e.name, -daysRemaining)
+                : pushTemplates.oilCritical(e.name, -daysRemaining)
+          sendPushToOwner({
+            tenant_id: e.generator.branch.tenant_id,
+            ...pushMsg,
+          }).catch(() => {})
+        } catch (_) {}
         createdAlerts++
         oilAlerts++
       }
