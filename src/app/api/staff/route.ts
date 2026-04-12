@@ -61,11 +61,31 @@ export async function POST(req: NextRequest) {
         role,
         pin: pin || null,
         is_owner_acting: is_owner_acting || false,
-        can_collect: can_collect || role === 'collector',
-        can_operate: can_operate || role === 'operator',
+        can_collect: can_collect || role === 'collector' || role === 'kiosk',
+        can_operate: can_operate || role === 'operator' || role === 'kiosk',
         is_active: true,
       },
     })
+
+    // Kiosk gets both collector wallet + operator permissions so it
+    // can run the POS AND manage fuel/oil from the same terminal.
+    if (role === 'kiosk') {
+      try {
+        await prisma.collectorWallet.create({
+          data: { staff_id: staff.id, branch_id, tenant_id: tenantId },
+        })
+        await prisma.operatorPermission.create({
+          data: {
+            staff_id: staff.id,
+            tenant_id: tenantId,
+            can_add_fuel: true,
+            can_record_oil_change: true,
+          },
+        })
+      } catch (e: any) {
+        console.warn('[staff/kiosk] default permissions failed:', e.message)
+      }
+    }
 
     // Create default permissions
     if (role === 'collector') {
