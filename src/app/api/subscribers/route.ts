@@ -205,16 +205,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'الحقول المطلوبة: الاسم، الأمبير، الفرع، المولد' }, { status: 400 })
     }
 
-    // Generate serial number: sequential per branch
-    const seq = await prisma.subscriber.count({ where: { branch_id } }) + 1
-    const serial_number = String(seq).padStart(4, '0')
+    // meter_number (رقم الجوزة) is the user-facing identifier.
+    // serial_number is kept for backward compat but no longer auto-
+    // generated. If the client sends meter_number, it's saved there.
+    // If the client sends serial_number explicitly, it's saved too.
+    // Otherwise both stay NULL — no auto-generated codes.
 
     const subscriber = await prisma.subscriber.create({
       data: {
         tenant_id: tenantId,
         branch_id,
         generator_id,
-        serial_number,
+        serial_number: body.serial_number || meter_number || null,
         name,
         phone: phone || null,
         address: address || null,
