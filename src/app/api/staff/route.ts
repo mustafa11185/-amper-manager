@@ -17,9 +17,11 @@ export async function GET(req: NextRequest) {
     ...(user.role !== 'owner' && branchId ? { branch_id: branchId } : {}),
   }
 
-  // Owner can filter by branch_id query param
+  // Owner can filter by branch_id or role query params
   const qBranch = req.nextUrl.searchParams.get('branch_id')
   if (qBranch) where.branch_id = qBranch
+  const qRole = req.nextUrl.searchParams.get('role')
+  if (qRole) where.role = qRole
 
   const staff = await prisma.staff.findMany({
     where,
