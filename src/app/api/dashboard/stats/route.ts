@@ -401,7 +401,7 @@ export async function GET(req: NextRequest) {
         last_fuel_update: firstGen.last_fuel_update ?? null,
         current_temp: latestTemp,
       } : null,
-      gold_hours_today: 0,
+      gold_hours_today: +(Math.max(0, (new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Baghdad' })).getHours() * 60 + new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Baghdad' })).getMinutes() - normalMinutesToday) / 60)).toFixed(1),
       normal_hours_today: +(normalMinutesToday / 60).toFixed(1),
       operators_present: operatorsPresent,
       operators_total: operatorsTotal,

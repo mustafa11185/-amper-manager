@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
   const tenantId = user.tenantId as string
 
   try {
-    const { engine_id, type, description, cost, performed_by } = await req.json()
+    const body = await req.json()
+    const { engine_id, type, description, cost, performed_by, supplier_id, payment_type } = body
     if (!engine_id || !type) {
       return NextResponse.json({ error: 'engine_id و type مطلوبان' }, { status: 400 })
     }
@@ -60,7 +61,32 @@ export async function POST(req: NextRequest) {
       await prisma.engine.update({ where: { id: engine_id }, data: updateData })
     }
 
-    return NextResponse.json({ log }, { status: 201 })
+    // Auto-create expense when cost is provided
+    let expense = null
+    if (cost && Number(cost) > 0) {
+      const categoryMap: Record<string, string> = {
+        oil_change: 'maintenance',
+        air_filter: 'maintenance',
+        full_service: 'maintenance',
+      }
+      const pType = payment_type || 'cash'
+      const costNum = Number(cost)
+      expense = await prisma.expense.create({
+        data: {
+          branch_id: engine.generator.branch_id,
+          category: categoryMap[type] || 'maintenance',
+          amount: costNum,
+          description: `${type === 'oil_change' ? 'تغيير دهن' : type === 'air_filter' ? 'فلتر هواء' : 'صيانة شاملة'} — ${engine.name}`,
+          payment_type: pType,
+          amount_paid: pType === 'credit' ? 0 : pType === 'partial' ? 0 : costNum,
+          amount_owed: pType === 'cash' ? 0 : costNum,
+          supplier_id: supplier_id || null,
+          related_to: `maintenance:${log.id}`,
+        },
+      })
+    }
+
+    return NextResponse.json({ log, expense }, { status: 201 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'خطأ' }, { status: 500 })
   }

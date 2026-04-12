@@ -20,9 +20,9 @@ import { NextResponse } from 'next/server'
 //   4. git push → Render deploys → users see "تحديث متاح"
 const APP_CONFIG = {
   min_version: '2.6.0',
-  latest_version: '2.6.0',
-  update_url: 'https://github.com/mustafa11185/amper-flutter/releases/latest/download/Amper-v2.6.0.apk',
-  changelog_ar: 'نظام الموردين + الكيوسك + الوقود والدهن + رصانة تسجيل الدخول',
+  latest_version: '2.7.0',
+  update_url: 'https://github.com/mustafa11185/amper-flutter/releases/latest/download/Amper-v2.7.0.apk',
+  changelog_ar: 'فحص شامل + إصلاحات حرجة + تحسينات الأداء والواجهة',
 }
 
 export async function GET() {

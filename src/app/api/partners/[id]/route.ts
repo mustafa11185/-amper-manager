@@ -73,17 +73,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// DELETE /partners/[id]?hard=true  → permanent delete (cascades all data)
+// DELETE /partners/[id]            → soft-delete (deactivate, preserves history)
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  if (user.role !== 'owner') return NextResponse.json({ error: 'غير مصرح' }, { status: 403 })
+  if (user.role !== 'owner') return NextResponse.json({ error: 'غير مص��ح' }, { status: 403 })
   const tenantId = user.tenantId as string
   const { id } = await params
 
   const existing = await prisma.partner.findFirst({ where: { id, tenant_id: tenantId } })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+
+  const hard = req.nextUrl.searchParams.get('hard') === 'true'
+
+  if (hard) {
+    // Hard delete: remove partner + all related data
+    await prisma.$transaction([
+      prisma.partnerSession.deleteMany({ where: { partner_id: id } }),
+      prisma.partnerWithdrawal.deleteMany({ where: { partner_id: id } }),
+      prisma.partnerContribution.deleteMany({ where: { partner_id: id } }),
+      prisma.partnerShare.deleteMany({ where: { partner_id: id } }),
+      prisma.partner.delete({ where: { id } }),
+    ])
+    return NextResponse.json({ ok: true, mode: 'hard_delete' })
+  }
 
   // Soft-delete: mark inactive (preserves history)
   await prisma.partner.update({
@@ -91,5 +107,5 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     data: { is_active: false },
   })
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, mode: 'deactivate' })
 }

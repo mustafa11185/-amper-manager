@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(req: NextRequest) {
   try {
+    // Auth: require subscriber cookie OR subscriber_id in body
+    const cookieStore = await cookies()
+    const cookieSubId = cookieStore.get('subscriber_id')?.value
+
     const body = await req.json()
-    const { subscriber_id, rating, comment } = body
+    const subscriber_id = body.subscriber_id || cookieSubId
+    const { rating, comment } = body
 
     if (!subscriber_id) {
-      return NextResponse.json({ error: 'subscriber_id مطلوب' }, { status: 400 })
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }
 
     if (!rating || rating < 1 || rating > 5) {

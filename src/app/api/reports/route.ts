@@ -105,42 +105,80 @@ export async function GET() {
     )
 
     // ══════════════════════════════════════════
-    //  BATCH 3: Collector stats (parallel per collector)
+    //  BATCH 3: Collector stats (batch queries — no N+1)
     // ══════════════════════════════════════════
-    const collectorStats = await Promise.all(staff.map(async (s) => {
-      const [wallet, paymentCount, shifts] = await Promise.all([
-        prisma.collectorWallet.findUnique({ where: { staff_id: s.id } }),
-        prisma.posTransaction.count({ where: { staff_id: s.id, created_at: { gte: monthStart } } }),
-        prisma.collectorShift.findMany({ where: { staff_id: s.id, shift_date: { gte: monthStart } } }),
-      ])
+    const staffIds = staff.map(s => s.id)
+    const allStaffIds = allStaff.map(s => s.id)
+
+    const [allWallets, paymentCounts, collectorShiftsAll, operatorShiftsAll] = await Promise.all([
+      staffIds.length > 0
+        ? prisma.collectorWallet.findMany({ where: { staff_id: { in: staffIds } } })
+        : [],
+      staffIds.length > 0
+        ? prisma.posTransaction.groupBy({
+            by: ['staff_id'],
+            where: { staff_id: { in: staffIds }, created_at: { gte: monthStart } },
+            _count: { id: true },
+          })
+        : [],
+      allStaffIds.length > 0
+        ? prisma.collectorShift.findMany({
+            where: { staff_id: { in: allStaffIds }, shift_date: { gte: monthStart } },
+          })
+        : [],
+      allStaffIds.length > 0
+        ? prisma.operatorShift.findMany({
+            where: { staff_id: { in: allStaffIds }, shift_date: { gte: monthStart } },
+          })
+        : [],
+    ])
+
+    const walletMap = new Map(allWallets.map(w => [w.staff_id, w]))
+    const payCountMap = new Map(paymentCounts.map((p: any) => [p.staff_id, p._count.id]))
+    const collShiftMap = new Map<string, typeof collectorShiftsAll>()
+    for (const sh of collectorShiftsAll) {
+      const arr = collShiftMap.get(sh.staff_id) ?? []
+      arr.push(sh)
+      collShiftMap.set(sh.staff_id, arr)
+    }
+    const opShiftMap = new Map<string, typeof operatorShiftsAll>()
+    for (const sh of operatorShiftsAll) {
+      const arr = opShiftMap.get(sh.staff_id) ?? []
+      arr.push(sh)
+      opShiftMap.set(sh.staff_id, arr)
+    }
+
+    const collectorStats = staff.map(s => {
+      const wallet = walletMap.get(s.id)
+      const shifts = collShiftMap.get(s.id) ?? []
       return {
         id: s.id, name: s.name,
         collected: Number(wallet?.total_collected ?? 0),
         delivered: Number(wallet?.total_delivered ?? 0),
         balance: Number(wallet?.balance ?? 0),
-        payment_count: paymentCount,
+        payment_count: payCountMap.get(s.id) ?? 0,
         late_days: shifts.filter(sh => (sh.late_minutes ?? 0) > 0).length,
       }
-    }))
+    })
 
     // ══════════════════════════════════════════
-    //  BATCH 4: Attendance stats (parallel per staff)
+    //  BATCH 4: Attendance stats (batch — no N+1)
     // ══════════════════════════════════════════
-    const attendanceStats = await Promise.all(allStaff.map(async (s) => {
+    const workingDays = Math.min(now.getDate(), 30)
+    const attendanceStats = allStaff.map(s => {
       const shifts = s.role === 'collector'
-        ? await prisma.collectorShift.findMany({ where: { staff_id: s.id, shift_date: { gte: monthStart } } })
-        : await prisma.operatorShift.findMany({ where: { staff_id: s.id, shift_date: { gte: monthStart } } })
+        ? (collShiftMap.get(s.id) ?? [])
+        : (opShiftMap.get(s.id) ?? [])
       const present = shifts.filter(sh => sh.check_in_at !== null).length
       const totalLateMin = shifts.reduce((sum, sh) => sum + ((sh as any).late_minutes ?? 0), 0)
       const lateDays = shifts.filter(sh => ((sh as any).late_minutes ?? 0) > 0).length
-      const workingDays = Math.min(now.getDate(), 30)
       return {
         id: s.id, name: s.name, role: s.role,
         present, absent: workingDays - present,
         avg_late: lateDays > 0 ? Math.round(totalLateMin / lateDays) : 0,
         total_late_min: totalLateMin,
       }
-    }))
+    })
 
     // ── Process expenses ──
     const expenseByCategory: Record<string, number> = {}
