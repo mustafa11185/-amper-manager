@@ -588,6 +588,12 @@ model Staff {
   can_add_expenses       Boolean      @default(true)
   can_check_in           Boolean      @default(true)
   track_location         Boolean      @default(true)
+  // Login security — tracked by auth.ts for account-locking after
+  // 5 failed PIN attempts. MUST be in the schema so prisma db push
+  // --accept-data-loss does not drop them on deploy.
+  login_attempts  Int                 @default(0)
+  locked_until    DateTime?
+  last_login      DateTime?
   photo_url       String?
   device_id       String?
   created_at      DateTime            @default(now())
