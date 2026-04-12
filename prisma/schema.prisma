@@ -18,6 +18,7 @@ enum StaffRole {
   collector
   operator
   cashier
+  kiosk
 }
 
 enum PlanType {

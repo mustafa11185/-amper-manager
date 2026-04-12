@@ -142,10 +142,11 @@ export const authOptions: NextAuthOptions = {
             tenantName: staff.tenant?.name,
             branchId: staff.branch_id,
             branchName: staff.branch?.name,
-            canCollect: staff.can_collect,
-            canOperate: staff.can_operate,
+            canCollect: staff.can_collect || staff.role === 'kiosk',
+            canOperate: staff.can_operate || staff.role === 'kiosk',
             isOwnerActing: staff.is_owner_acting,
-            isDualRole: staff.role === 'collector' && staff.can_operate === true,
+            isDualRole: (staff.role === 'collector' && staff.can_operate === true) || staff.role === 'kiosk',
+            isKiosk: staff.role === 'kiosk',
             canGiveDiscount: cp?.can_give_discount ?? false,
             discountMaxAmount: Number(cp?.discount_max_amount ?? 0),
             canRecordOilChange: op?.can_record_oil_change ?? false,
@@ -173,6 +174,7 @@ export const authOptions: NextAuthOptions = {
         token.discountMaxAmount = (user as any).discountMaxAmount
         token.canRecordOilChange = (user as any).canRecordOilChange
         token.canAddFuel = (user as any).canAddFuel
+        token.isKiosk = (user as any).isKiosk
       } else if (token.tenantId) {
         // Refresh plan + tenant name from DB at most once per minute.
         // Without this, the token's `plan` and `tenantName` are frozen at
@@ -213,6 +215,7 @@ export const authOptions: NextAuthOptions = {
       ;(session as any).user.discountMaxAmount = token.discountMaxAmount
       ;(session as any).user.canRecordOilChange = token.canRecordOilChange
       ;(session as any).user.canAddFuel = token.canAddFuel
+      ;(session as any).user.isKiosk = token.isKiosk
       return session
     }
   },
