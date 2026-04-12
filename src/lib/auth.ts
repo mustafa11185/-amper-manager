@@ -43,16 +43,33 @@ export const authOptions: NextAuthOptions = {
             return null
           }
           if (!tenant || !tenant.is_active) return null
-          const valid = await bcrypt.compare(credentials.password, tenant.password)
+          if (!tenant.password) {
+            console.warn('[auth/owner] tenant has no password set')
+            return null
+          }
+          let valid = false
+          try {
+            // bcrypt can block for seconds on slow hardware — race
+            // against a 5-second timeout so the user isn't left staring
+            // at a frozen screen.
+            valid = await Promise.race([
+              bcrypt.compare(credentials.password, tenant.password),
+              new Promise<boolean>((_, reject) =>
+                setTimeout(() => reject(new Error('bcrypt_timeout')), 5000)),
+            ])
+          } catch (e: any) {
+            console.warn('[auth/owner] password check failed:', e.message)
+            return null
+          }
           if (!valid) return null
           return {
             id: tenant.id,
-            name: tenant.owner_name,
-            phone: tenant.phone,
+            name: tenant.owner_name ?? 'المالك',
+            phone: tenant.phone ?? '',
             role: 'owner',
             tenantId: tenant.id,
-            tenantName: tenant.name,
-            plan: tenant.plan,
+            tenantName: tenant.name ?? '',
+            plan: tenant.plan ?? 'starter',
           }
         } else {
           // Use explicit select for the same defensive reason as owner branch.
