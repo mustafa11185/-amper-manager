@@ -117,18 +117,30 @@ export const authOptions: NextAuthOptions = {
           }
 
           if (staff.pin !== credentials.password) {
-            // Increment login_attempts, lock after 5 failures
-            await prisma.$executeRawUnsafe(
-              `UPDATE staff SET login_attempts = COALESCE(login_attempts, 0) + 1,
-               locked_until = CASE WHEN COALESCE(login_attempts, 0) + 1 >= 5
-                 THEN NOW() + INTERVAL '15 minutes' ELSE locked_until END
-               WHERE id = $1`, staff.id)
+            // Increment login_attempts, lock after 5 failures.
+            // Wrapped in try-catch because these columns are raw-SQL
+            // additions that may not exist if prisma db push dropped them.
+            try {
+              await prisma.$executeRawUnsafe(
+                `UPDATE staff SET login_attempts = COALESCE(login_attempts, 0) + 1,
+                 locked_until = CASE WHEN COALESCE(login_attempts, 0) + 1 >= 5
+                   THEN NOW() + INTERVAL '15 minutes' ELSE locked_until END
+                 WHERE id = $1`, staff.id)
+            } catch (lockErr: any) {
+              console.warn('[auth/staff] login_attempts update skipped:', lockErr.message)
+            }
             return null
           }
 
-          // Success — reset attempts + update last_login
-          await prisma.$executeRawUnsafe(
-            `UPDATE staff SET login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1`, staff.id)
+          // Success — reset attempts + update last_login.
+          // Same defensive wrapping — if the columns were dropped by
+          // prisma db push --accept-data-loss, this must not block login.
+          try {
+            await prisma.$executeRawUnsafe(
+              `UPDATE staff SET login_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = $1`, staff.id)
+          } catch (resetErr: any) {
+            console.warn('[auth/staff] login_attempts reset skipped:', resetErr.message)
+          }
 
           // Allow all staff roles (collector, operator, accountant, cashier)
           const cp = staff.collector_permission
