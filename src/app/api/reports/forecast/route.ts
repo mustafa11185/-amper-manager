@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
+  const tenantId = user.tenantId as string
 
   try {
     const branchIds = await resolveBranchIds(req, user)
@@ -60,13 +61,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Current cycle "collected so far" = sum(amount_paid) on the
-    // CURRENT cycle's invoices. Matches /reports/financial's
+    // CURRENT cycle's invoices PLUS any debt collections logged
+    // during the cycle window. Matches /reports/financial's
     // total_collected so the forecast screen and the financial
     // report show the same baseline number.
-    //
-    // Also return total_due for the cycle so the UI can show
-    // "X من إيرادات الشهر Y" progress.
-    const [currentAgg, ...pastAggs] = await Promise.all([
+    const [currentAgg, debtLogsNow, ...pastAggs] = await Promise.all([
       prisma.invoice.aggregate({
         _sum: { amount_paid: true, total_amount_due: true },
         where: {
@@ -75,6 +74,15 @@ export async function GET(req: NextRequest) {
           billing_year: cycle.year,
         },
       }),
+      prisma.auditLog.findMany({
+        where: {
+          action: 'debt_collected',
+          tenant_id: tenantId,
+          branch_id: { in: branchIds },
+          created_at: { gte: cycle.start },
+        },
+        select: { new_value: true },
+      }).catch(() => [] as Array<{ new_value: unknown }>),
       ...past.map(({ m, y }) =>
         prisma.invoice.aggregate({
           _sum: { amount_paid: true },
@@ -92,7 +100,12 @@ export async function GET(req: NextRequest) {
     const avgMonth = nonZero.length > 0 ? nonZero.reduce((s, t) => s + t, 0) / nonZero.length : 0
     const avgDaily = avgMonth / CYCLE_LENGTH_DAYS
 
-    const currentMtd = Number(currentAgg._sum.amount_paid ?? 0)
+    let debtCollectedNow = 0
+    for (const r of debtLogsNow) {
+      debtCollectedNow += Number((r.new_value as { amount?: number } | null)?.amount ?? 0)
+    }
+    const invoiceCollected = Number(currentAgg._sum.amount_paid ?? 0)
+    const currentMtd = invoiceCollected + debtCollectedNow
     const totalDue = Number(currentAgg._sum.total_amount_due ?? 0)
     // Forecast = collected so far + (avg daily rate × remaining days).
     // Cap at the cycle's total_due — no point projecting more than

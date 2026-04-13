@@ -227,6 +227,27 @@ export async function POST(req: NextRequest) {
           where: { id: subscriber_id },
           data: { total_debt: newDebt },
         })
+        // Log the debt collection as a revenue event so the
+        // financial report can count it inside total_collected
+        // for the cycle the payment happened in. Without this
+        // audit row, "تحصيل ديون سابقة" disappears from the
+        // revenue card even though the cash was real.
+        await tx.auditLog.create({
+          data: {
+            tenant_id: subscriber.tenant_id,
+            branch_id: subscriber.branch_id,
+            actor_id: user.id ?? null,
+            actor_type: user.role ?? null,
+            action: 'debt_collected',
+            entity_type: 'subscriber',
+            entity_id: subscriber_id,
+            new_value: {
+              amount: debtReduced,
+              payment_method,
+              pay_type: type,
+            },
+          },
+        })
       } else if (type === 'invoice') {
         // For invoice-only, debt is not changed
         // (invoice payments don't affect accumulated debt)

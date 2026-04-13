@@ -66,19 +66,39 @@ export async function GET(req: NextRequest) {
     const where: any = { tenant_id: tenantId }
     if (branchId) where.branch_id = branchId
 
-    // Invoices this cycle — powers BOTH the "ceiling" (total_due)
-    // and the "collected" widgets. Owners asked for these numbers
-    // to reflect the cycle's OWN invoices: "ماتم دفعه من فواتير
-    // هذا الشهر" — not cash flow that drifted in for old invoices.
-    // If a subscriber pays an old debt during this cycle it bumps
-    // their total_debt down, not this card.
+    // Invoices this cycle — powers total_due (the ceiling) and the
+    // base of total_collected. The base is sum(amount_paid) on this
+    // cycle's own invoices; we then ADD any debt collections that
+    // happened inside the cycle window on top. See the audit-log
+    // query below — without it, paying down an old debt would
+    // vanish from the revenue card even though the cash was real.
     const invoiceAgg = await prisma.invoice.aggregate({
       where: { ...where, billing_month: month, billing_year: year },
       _sum: { total_amount_due: true, amount_paid: true },
       _count: true,
     })
     const totalDue = Number(invoiceAgg._sum.total_amount_due || 0)
-    const totalCollected = Number(invoiceAgg._sum.amount_paid || 0)
+    const invoiceCollected = Number(invoiceAgg._sum.amount_paid || 0)
+
+    // Sum 'debt_collected' audit entries for the cycle window.
+    // pos/payment and sync/payment both emit this action with
+    // new_value.amount set to the dinars that reduced total_debt
+    // on the subscriber.
+    const debtLogs = await prisma.auditLog.findMany({
+      where: {
+        action: 'debt_collected',
+        tenant_id: tenantId,
+        ...(branchId ? { branch_id: branchId } : {}),
+        created_at: { gte: monthStart },
+      },
+      select: { new_value: true },
+    }).catch(() => [] as Array<{ new_value: unknown }>)
+    let debtCollectedCycle = 0
+    for (const row of debtLogs) {
+      const v = row.new_value as { amount?: number } | null
+      debtCollectedCycle += Number(v?.amount ?? 0)
+    }
+    const totalCollected = invoiceCollected + debtCollectedCycle
 
     // Separately, expose the real cash flow for this cycle so
     // dashboards or future widgets that want "actual dinars in"
@@ -219,28 +239,43 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // Previous period — must use the SAME definition as the
-    // current period (invoice amount_paid for that period) so the
-    // two numbers are comparable. Previously I briefly switched
-    // both sides to cash-in; owners asked me to flip back to the
-    // invoice-based definition for consistency with total_due.
-    const [prevInvoiceAgg, prevExpAgg] = await Promise.all([
+    // Previous period — same definition as current (invoice
+    // amount_paid for that period + debt_collected audit entries
+    // inside the prev window) so the comparison is apples-to-apples.
+    const [prevInvoiceAgg, prevDebtLogs, prevExpAgg] = await Promise.all([
       prisma.invoice.aggregate({
         _sum: { amount_paid: true },
         where: { ...where, billing_month: prevMonth, billing_year: prevYear },
       }),
+      prisma.auditLog.findMany({
+        where: {
+          action: 'debt_collected',
+          tenant_id: tenantId,
+          ...(branchId ? { branch_id: branchId } : {}),
+          created_at: { gte: prevStart, lt: prevEnd },
+        },
+        select: { new_value: true },
+      }).catch(() => [] as Array<{ new_value: unknown }>),
       prisma.expense.aggregate({
         _sum: { amount: true },
         where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: prevStart, lt: prevEnd } },
       }),
     ])
-    const prevCollected = Number(prevInvoiceAgg._sum.amount_paid || 0)
+    let prevDebtCollected = 0
+    for (const row of prevDebtLogs) {
+      const v = row.new_value as { amount?: number } | null
+      prevDebtCollected += Number(v?.amount ?? 0)
+    }
+    const prevCollected = Number(prevInvoiceAgg._sum.amount_paid || 0) + prevDebtCollected
     const prevNet = prevCollected - Number(prevExpAgg._sum.amount || 0)
     const growthPercent = prevCollected > 0 ? Math.round(((totalCollected - prevCollected) / prevCollected) * 100) : 0
 
     return NextResponse.json({
       total_due: totalDue,
       total_collected: totalCollected,
+      // Break-out so the UI can show "from invoices" vs "from debt"
+      invoice_collected: invoiceCollected,
+      debt_collected: debtCollectedCycle,
       // Real cash flow for this cycle (POS + Online since cycle
       // start). Kept separate from total_collected so widgets can
       // choose whichever view they need without another refactor.

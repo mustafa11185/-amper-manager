@@ -54,11 +54,34 @@ export async function POST(req: NextRequest) {
           // applied to invoices and silently erased debt on pure
           // invoice payments.
           if (remaining > 0) {
-            const newDebt = Math.max(0, Number(subscriber.total_debt) - remaining)
+            const currentDebt = Number(subscriber.total_debt)
+            const debtCollected = Math.min(remaining, currentDebt)
+            const newDebt = Math.max(0, currentDebt - remaining)
             await tx.subscriber.update({
               where: { id: payment.subscriber_id },
               data: { total_debt: newDebt },
             })
+            if (debtCollected > 0) {
+              // Mirror the pos/payment audit row so debt
+              // collections via offline sync also show up in
+              // the financial report's total_collected.
+              await tx.auditLog.create({
+                data: {
+                  tenant_id: subscriber.tenant_id,
+                  branch_id: subscriber.branch_id,
+                  actor_id: user.id ?? null,
+                  actor_type: user.role ?? null,
+                  action: 'debt_collected',
+                  entity_type: 'subscriber',
+                  entity_id: payment.subscriber_id,
+                  new_value: {
+                    amount: debtCollected,
+                    payment_method: payment.payment_method,
+                    source: 'offline_sync',
+                  },
+                },
+              })
+            }
           }
 
           if (payment.payment_method === 'cash' && user.role !== 'owner') {

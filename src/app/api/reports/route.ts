@@ -126,6 +126,39 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
+    // ── Debt collections inside current & previous cycle ──
+    // These get added to cash_this_month / cash_last_month so the
+    // hub hero matches the financial report's total_collected,
+    // which already counts them.
+    const [debtLogsNow, debtLogsPrev] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: {
+          action: 'debt_collected',
+          tenant_id: tenantId,
+          branch_id: { in: branchIds },
+          created_at: { gte: monthStart },
+        },
+        select: { new_value: true },
+      }).catch(() => [] as Array<{ new_value: unknown }>),
+      prisma.auditLog.findMany({
+        where: {
+          action: 'debt_collected',
+          tenant_id: tenantId,
+          branch_id: { in: branchIds },
+          created_at: { gte: prevStart, lt: prevEnd },
+        },
+        select: { new_value: true },
+      }).catch(() => [] as Array<{ new_value: unknown }>),
+    ])
+    let debtCollectedNow = 0
+    for (const r of debtLogsNow) {
+      debtCollectedNow += Number((r.new_value as { amount?: number } | null)?.amount ?? 0)
+    }
+    let debtCollectedPrev = 0
+    for (const r of debtLogsPrev) {
+      debtCollectedPrev += Number((r.new_value as { amount?: number } | null)?.amount ?? 0)
+    }
+
     // ══════════════════════════════════════════
     //  BATCH 2: Revenue history (6 months parallel)
     // ══════════════════════════════════════════
@@ -262,17 +295,22 @@ export async function GET(req: NextRequest) {
         where: { tenant_id: tenantId, window_end: { gte: monthStart } },
       }),
     ])
-    const cashRevenue = Number(cashThisMonth._sum.amount_paid ?? 0)
+    // Net profit = invoice revenue + debt collections − fuel − expenses
+    const cashRevenue = Number(cashThisMonth._sum.amount_paid ?? 0) + debtCollectedNow
     const fuelCost = Number(fuelCostThisMonth._sum.cost_iqd ?? 0)
     const netProfitThisMonth = cashRevenue - fuelCost - totalExpenses
 
     return NextResponse.json({
       financial: {
         monthly_revenue: monthlyRevenue,
-        cash_this_month: Number(cashThisMonth._sum.amount_paid ?? 0),
+        // cash_this_month/last_month include debt collections so
+        // they match /reports/financial.total_collected.
+        cash_this_month: Number(cashThisMonth._sum.amount_paid ?? 0) + debtCollectedNow,
         online_this_month: Number(onlineThisMonth._sum.amount ?? 0),
-        cash_last_month: Number(cashLastMonth._sum.amount_paid ?? 0),
+        cash_last_month: Number(cashLastMonth._sum.amount_paid ?? 0) + debtCollectedPrev,
         online_last_month: Number(onlineLastMonth._sum.amount ?? 0),
+        debt_collected_this_month: debtCollectedNow,
+        debt_collected_last_month: debtCollectedPrev,
         total_debt: Number(totalDebtAgg._sum.total_debt ?? 0),
         collection_rate: totalInvoices > 0 ? Math.round((paidInvoices / totalInvoices) * 100) : 0,
         // NEW
