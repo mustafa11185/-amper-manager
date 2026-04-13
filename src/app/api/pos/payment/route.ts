@@ -91,14 +91,20 @@ export async function POST(req: NextRequest) {
           if (targetInv) {
             const baseAmt = Number(targetInv.base_amount)
             const currentDisc = Number(targetInv.discount_amount)
+            const amtPaid = Number(targetInv.amount_paid)
             const newDisc = currentDisc + disc
+            const newTotal = Math.max(0, baseAmt - newDisc)
+            // Discount can push a partially-paid invoice over the
+            // new total — in that case flip is_fully_paid.
+            const nowFullyPaid = amtPaid >= newTotal
             await tx.invoice.update({
               where: { id: targetInv.id },
               data: {
                 discount_amount: newDisc,
                 discount_type: 'fixed',
                 discount_reason: discount_reason || 'خصم من المالك',
-                total_amount_due: Math.max(0, baseAmt - newDisc),
+                total_amount_due: newTotal,
+                is_fully_paid: nowFullyPaid,
               },
             })
           }
@@ -177,17 +183,27 @@ export async function POST(req: NextRequest) {
           const due = Number(inv.total_amount_due) - Number(inv.amount_paid)
           const pay = Math.min(remaining, due)
 
-          await tx.invoice.update({
+          // Increment amount_paid atomically, then use the returned
+          // row's authoritative values to set is_fully_paid. This
+          // avoids a race where the pre-read `due` is stale relative
+          // to a concurrent payment on the same invoice.
+          const updatedInv = await tx.invoice.update({
             where: { id: inv.id },
             data: {
               amount_paid: { increment: pay },
-              is_fully_paid: pay >= due,
               payment_method,
               collector_id: user.role !== 'owner' ? user.id : null,
               received_by_owner: user.role === 'owner',
               ...(client_uuid ? { notes: `offline:${client_uuid}` } : {}),
             },
           })
+          const nowFullyPaid = Number(updatedInv.amount_paid) >= Number(updatedInv.total_amount_due)
+          if (nowFullyPaid && !updatedInv.is_fully_paid) {
+            await tx.invoice.update({
+              where: { id: inv.id },
+              data: { is_fully_paid: true },
+            })
+          }
           invoicesUpdated++
           remaining -= pay
         }

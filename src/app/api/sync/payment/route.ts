@@ -48,11 +48,18 @@ export async function POST(req: NextRequest) {
             remaining -= pay
           }
 
-          const newDebt = Math.max(0, Number(subscriber.total_debt) - payment.amount)
-          await tx.subscriber.update({
-            where: { id: payment.subscriber_id },
-            data: { total_debt: newDebt },
-          })
+          // Only the LEFTOVER amount (after paying unpaid invoices)
+          // reduces total_debt. The old code subtracted the full
+          // payment.amount, which double-counted anything already
+          // applied to invoices and silently erased debt on pure
+          // invoice payments.
+          if (remaining > 0) {
+            const newDebt = Math.max(0, Number(subscriber.total_debt) - remaining)
+            await tx.subscriber.update({
+              where: { id: payment.subscriber_id },
+              data: { total_debt: newDebt },
+            })
+          }
 
           if (payment.payment_method === 'cash' && user.role !== 'owner') {
             await tx.collectorWallet.upsert({

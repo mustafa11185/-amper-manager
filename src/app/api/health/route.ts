@@ -1,21 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+// Public liveness probe — returns only ok/error plus DB reachability.
+// Must not expose NEXTAUTH_URL, NODE_ENV, or any other env fingerprint;
+// those let attackers tell which deployment they're hitting.
 export async function GET() {
-  const checks: Record<string, string> = {
-    status: 'ok',
-    db_url: process.env.DATABASE_URL ? 'set' : 'MISSING',
-    nextauth_url: process.env.NEXTAUTH_URL || 'MISSING',
-    node_env: process.env.NODE_ENV || 'unknown',
-  }
-
   try {
     await prisma.$queryRaw`SELECT 1`
-    checks.db = 'connected'
-  } catch (error: any) {
-    checks.db = `error: ${error?.message || String(error)}`
-    checks.status = 'error'
+    return NextResponse.json({ status: 'ok' })
+  } catch {
+    return NextResponse.json({ status: 'error' }, { status: 500 })
   }
-
-  return NextResponse.json(checks, { status: checks.status === 'ok' ? 200 : 500 })
 }

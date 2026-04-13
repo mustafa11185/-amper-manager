@@ -20,8 +20,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
     }
 
-    const staff = await prisma.staff.findUnique({
-      where: { id: staff_id },
+    // Always scope to the caller's tenant — without this, an
+    // accountant/owner on tenant A could pay salary to a staff row
+    // on tenant B by guessing their UUID.
+    const staff = await prisma.staff.findFirst({
+      where: { id: staff_id, tenant_id: user.tenantId },
       select: { branch_id: true, tenant_id: true, name: true },
     })
     if (!staff) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })

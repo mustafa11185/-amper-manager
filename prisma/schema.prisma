@@ -542,6 +542,7 @@ model InvoiceGenerationLog {
   reversed_at   DateTime?
   branch        Branch    @relation(fields: [branch_id], references: [id])
   @@index([branch_id, generated_at])
+  @@index([branch_id, is_reversed, generated_at])
   @@map("invoice_generation_logs")
 }
 
@@ -1824,4 +1825,43 @@ model SubscriberComplaint {
   @@index([tenant_id, status, created_at])
   @@index([subscriber_id, created_at])
   @@map("subscriber_complaints")
+}
+
+// Tenant-wide announcements used by multiple routes via raw SQL.
+// Declaring the model here so the schema is self-documenting and
+// so `prisma db push` can create the table on fresh deploys.
+model Announcement {
+  id             String   @id @default(uuid())
+  tenant_id      String
+  type           String   @default("general")
+  message        String
+  target         String   @default("all") // all | collectors | operators | accountants
+  is_urgent      Boolean  @default(false)
+  auto_generated Boolean  @default(false)
+  created_by     String?
+  created_at     DateTime @default(now())
+  @@index([tenant_id, created_at])
+  @@map("announcements")
+}
+
+// Per-tenant plan overrides — limits + feature flags that override
+// the defaults in src/app/api/plan/route.ts.
+model TenantPlan {
+  tenant_id         String   @id
+  plan_name         String
+  max_subscribers   Int
+  max_staff         Int
+  max_branches      Int
+  online_payment    Boolean  @default(false)
+  financial_reports Boolean  @default(false)
+  custom_app        Boolean  @default(false)
+  announcements     Boolean  @default(false)
+  advanced_reports  Boolean  @default(false)
+  api_access        Boolean  @default(false)
+  white_label       Boolean  @default(false)
+  expires_at        DateTime?
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now())
+  @@map("tenant_plans")
 }

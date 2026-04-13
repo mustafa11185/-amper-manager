@@ -63,15 +63,27 @@ export async function POST(
         },
       });
 
-      // 2. Reverse collector wallet if cash payment
+      // 2. Reverse collector wallet if cash payment.
+      //
+      // Two sources of truth for who took the cash:
+      //   a) PosTransaction row (normal POS flow)
+      //   b) invoice.collector_id + invoice.payment_method (offline
+      //      sync flow — /api/sync/payment does NOT create a
+      //      PosTransaction, only updates the invoice + wallet).
+      // Without (b), reversing an offline-synced invoice leaves the
+      // collector's wallet balance too high.
       const posTx = await tx.posTransaction.findFirst({
         where: { invoice_id: id },
         orderBy: { created_at: "desc" },
       });
 
-      if (posTx && posTx.payment_method === "cash" && posTx.staff_id) {
+      const walletStaffId = posTx?.payment_method === "cash" && posTx.staff_id
+        ? posTx.staff_id
+        : (invoice.payment_method === "cash" && collectorId ? collectorId : null);
+
+      if (walletStaffId) {
         await tx.collectorWallet.updateMany({
-          where: { staff_id: posTx.staff_id },
+          where: { staff_id: walletStaffId },
           data: {
             total_collected: { decrement: originalPaid },
             balance: { decrement: originalPaid },

@@ -45,13 +45,25 @@ const PERSONAL_TYPES = [
   'discount_approved',
   'discount_rejected',
   'salary_ready',
+  'salary_paid',
   'task_assigned',
+  // Per-staff wallet and delivery events
+  'wallet_delivery',
+  'wallet_threshold',
+  'delivery',
+  // Payment confirmations directed at the collector who took the payment
+  'payment_confirmed',
+  'payment_online_collector',
 ] as const
 
 // Staff-only broadcast types (no per-user payload check).
 const STAFF_BROADCAST_TYPES = [
   'announcement_to_staff',
   'shift_reminder',
+  // Generation outcome — collectors need to know invoices dropped
+  'invoice_generated',
+  // Operational alerts the whole branch team should see
+  'inactive_generator',
 ] as const
 
 export async function buildNotificationFilter(user: SessionUser) {

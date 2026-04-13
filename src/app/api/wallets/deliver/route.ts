@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       await prisma.notification.create({
         data: {
           branch_id: wallet.branch_id,
-          tenant_id: wallet.tenant_id || '',
+          tenant_id: wallet.tenant_id,
           type: 'wallet_delivery',
           title: 'استلام من محفظة 💰',
           body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظة ${staffName}`,

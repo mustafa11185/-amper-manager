@@ -17,11 +17,15 @@ export async function GET(req: NextRequest) {
     ...(user.role !== 'owner' && branchId ? { branch_id: branchId } : {}),
   }
 
-  // Owner can filter by branch_id or role query params
-  const qBranch = req.nextUrl.searchParams.get('branch_id')
-  if (qBranch) where.branch_id = qBranch
-  const qRole = req.nextUrl.searchParams.get('role')
-  if (qRole) where.role = qRole
+  // Only owners may override branch_id / role via query params. A
+  // non-owner passing ?branch_id=... must not be able to widen the
+  // scope beyond their own branch.
+  if (user.role === 'owner') {
+    const qBranch = req.nextUrl.searchParams.get('branch_id')
+    if (qBranch) where.branch_id = qBranch
+    const qRole = req.nextUrl.searchParams.get('role')
+    if (qRole) where.role = qRole
+  }
 
   const staff = await prisma.staff.findMany({
     where,
@@ -32,7 +36,14 @@ export async function GET(req: NextRequest) {
     orderBy: { created_at: 'desc' },
   })
 
-  return NextResponse.json({ staff })
+  // Strip the pin field from the response. PINs are authentication
+  // secrets — only the user themselves should know them, and they
+  // are never needed in the manager dashboard list.
+  const safe = staff.map((s: any) => {
+    const { pin: _pin, ...rest } = s
+    return { ...rest, has_pin: !!_pin }
+  })
+  return NextResponse.json({ staff: safe })
 }
 
 export async function POST(req: NextRequest) {
@@ -51,6 +62,16 @@ export async function POST(req: NextRequest) {
 
     if (!name || !role || !branch_id) {
       return NextResponse.json({ error: 'الحقول المطلوبة: الاسم، الدور، الفرع' }, { status: 400 })
+    }
+
+    // Verify branch belongs to tenant so an owner can't seed staff
+    // into someone else's branch by guessing ids.
+    const ownedBranch = await prisma.branch.findFirst({
+      where: { id: branch_id, tenant_id: tenantId },
+      select: { id: true },
+    })
+    if (!ownedBranch) {
+      return NextResponse.json({ error: 'الفرع غير موجود' }, { status: 404 })
     }
 
     const staff = await prisma.staff.create({

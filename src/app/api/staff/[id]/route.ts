@@ -147,19 +147,30 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
-    // Delete RESTRICT children first (CASCADE ones auto-delete)
-    await prisma.$executeRawUnsafe(`DELETE FROM pos_transactions WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM collector_daily_reports WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM collector_shifts WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM operator_shifts WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM operator_schedules WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM staff_gps_logs WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM staff_devices WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM collector_discount_requests WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM salary_payments WHERE staff_id = '${id}'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM collector_wallets WHERE staff_id = '${id}'`);
-    // Now delete staff (CASCADE handles permissions, branch_access, salary_config)
-    await prisma.staff.delete({ where: { id } });
+    // Verify staff belongs to tenant before deleting anything.
+    const existing = await prisma.staff.findFirst({
+      where: { id, tenant_id: user.tenantId },
+      select: { id: true },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
+    }
+
+    // Delete RESTRICT children first (CASCADE ones auto-delete).
+    // Use Prisma ORM deleteMany — no raw SQL, no injection surface.
+    await prisma.$transaction([
+      prisma.posTransaction.deleteMany({ where: { staff_id: id } }),
+      prisma.collectorDailyReport.deleteMany({ where: { staff_id: id } }),
+      prisma.collectorShift.deleteMany({ where: { staff_id: id } }),
+      prisma.operatorShift.deleteMany({ where: { staff_id: id } }),
+      prisma.operatorSchedule.deleteMany({ where: { staff_id: id } }),
+      prisma.staffGpsLog.deleteMany({ where: { staff_id: id } }),
+      prisma.staffDevice.deleteMany({ where: { staff_id: id } }),
+      prisma.collectorDiscountRequest.deleteMany({ where: { staff_id: id } }),
+      prisma.salaryPayment.deleteMany({ where: { staff_id: id } }),
+      prisma.collectorWallet.deleteMany({ where: { staff_id: id } }),
+      prisma.staff.delete({ where: { id } }),
+    ])
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     console.error('Delete staff error:', err.message, err.code);

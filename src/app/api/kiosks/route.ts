@@ -38,6 +38,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'الاسم والفرع مطلوبان' }, { status: 400 })
     }
 
+    // Verify branch belongs to tenant — without this, a manager
+    // could create a kiosk on any branch id they can guess.
+    const ownedBranch = await prisma.branch.findFirst({
+      where: { id: branch_id, tenant_id: tenantId },
+      select: { id: true },
+    })
+    if (!ownedBranch) {
+      return NextResponse.json({ error: 'الفرع غير موجود' }, { status: 404 })
+    }
+
     const kiosk = await prisma.kioskScreen.create({
       data: {
         tenant_id: tenantId,
