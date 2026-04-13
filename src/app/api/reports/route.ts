@@ -52,33 +52,32 @@ export async function GET(req: NextRequest) {
       expensesThisMonth,
       onlinePayments,
     ] = await Promise.all([
-      // cash_this_month / online_this_month now mean "actual cash
-      // received during this CYCLE window" — POS success + online
-      // success since cycle start. Previously this was invoice-based
-      // amount_paid which diverged from the financial report widget.
-      prisma.posTransaction.aggregate({
-        _sum: { amount: true },
+      // cash_this_month = amount_paid on THIS cycle's invoices
+      // (matches the financial report's total_collected). Owners
+      // want these numbers to reflect the current cycle's own
+      // revenue, not drifting cash flow from late payments.
+      prisma.invoice.aggregate({
+        _sum: { amount_paid: true },
         where: {
-          tenant_id: tenantId,
           branch_id: { in: branchIds },
-          status: 'success',
-          created_at: { gte: monthStart },
+          billing_month: currentMonth,
+          billing_year: currentYear,
+          payment_method: { notIn: ['furatpay'] },
         },
       }),
       prisma.onlinePayment.aggregate({
         _sum: { amount: true },
         where: { tenant_id: tenantId, status: 'success', created_at: { gte: monthStart } },
       }),
-      // Previous cycle equivalents — power the hub hero "vs last
-      // month" comparison. Without these the Flutter hub always
-      // showed 0% change because cash_last_month didn't exist.
-      prisma.posTransaction.aggregate({
-        _sum: { amount: true },
+      // Previous cycle — same invoice-based definition for the
+      // comparison card.
+      prisma.invoice.aggregate({
+        _sum: { amount_paid: true },
         where: {
-          tenant_id: tenantId,
           branch_id: { in: branchIds },
-          status: 'success',
-          created_at: { gte: prevStart, lt: prevEnd },
+          billing_month: prevCycle.month,
+          billing_year: prevCycle.year,
+          payment_method: { notIn: ['furatpay'] },
         },
       }),
       prisma.onlinePayment.aggregate({
@@ -263,16 +262,16 @@ export async function GET(req: NextRequest) {
         where: { tenant_id: tenantId, window_end: { gte: monthStart } },
       }),
     ])
-    const cashRevenue = Number(cashThisMonth._sum.amount ?? 0)
+    const cashRevenue = Number(cashThisMonth._sum.amount_paid ?? 0)
     const fuelCost = Number(fuelCostThisMonth._sum.cost_iqd ?? 0)
     const netProfitThisMonth = cashRevenue - fuelCost - totalExpenses
 
     return NextResponse.json({
       financial: {
         monthly_revenue: monthlyRevenue,
-        cash_this_month: Number(cashThisMonth._sum.amount ?? 0),
+        cash_this_month: Number(cashThisMonth._sum.amount_paid ?? 0),
         online_this_month: Number(onlineThisMonth._sum.amount ?? 0),
-        cash_last_month: Number(cashLastMonth._sum.amount ?? 0),
+        cash_last_month: Number(cashLastMonth._sum.amount_paid ?? 0),
         online_last_month: Number(onlineLastMonth._sum.amount ?? 0),
         total_debt: Number(totalDebtAgg._sum.total_debt ?? 0),
         collection_rate: totalInvoices > 0 ? Math.round((paidInvoices / totalInvoices) * 100) : 0,

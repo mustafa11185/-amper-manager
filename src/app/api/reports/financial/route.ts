@@ -66,21 +66,23 @@ export async function GET(req: NextRequest) {
     const where: any = { tenant_id: tenantId }
     if (branchId) where.branch_id = branchId
 
-    // Invoices this month — used for "total_due" (theoretical ceiling)
+    // Invoices this cycle — powers BOTH the "ceiling" (total_due)
+    // and the "collected" widgets. Owners asked for these numbers
+    // to reflect the cycle's OWN invoices: "ماتم دفعه من فواتير
+    // هذا الشهر" — not cash flow that drifted in for old invoices.
+    // If a subscriber pays an old debt during this cycle it bumps
+    // their total_debt down, not this card.
     const invoiceAgg = await prisma.invoice.aggregate({
       where: { ...where, billing_month: month, billing_year: year },
       _sum: { total_amount_due: true, amount_paid: true },
       _count: true,
     })
     const totalDue = Number(invoiceAgg._sum.total_amount_due || 0)
+    const totalCollected = Number(invoiceAgg._sum.amount_paid || 0)
 
-    // "Total collected" = every dinar that actually came in during
-    // the cycle window, REGARDLESS of which invoice it paid. This
-    // matches option (أ) from the cycle discussion: late payments
-    // for prior-cycle invoices count toward THIS cycle's revenue
-    // because that's the money the owner actually received this
-    // cycle. Previously we only counted amount_paid on current-
-    // cycle invoices, which under-reported the real cash in.
+    // Separately, expose the real cash flow for this cycle so
+    // dashboards or future widgets that want "actual dinars in"
+    // can still get it without another refactor.
     const [cashThisCycleAgg, onlineThisCycleAgg] = await Promise.all([
       prisma.posTransaction.aggregate({
         _sum: { amount: true },
@@ -100,7 +102,7 @@ export async function GET(req: NextRequest) {
         },
       }),
     ])
-    const totalCollected =
+    const cycleCashIn =
       Number(cashThisCycleAgg._sum.amount || 0) +
       Number(onlineThisCycleAgg._sum.amount || 0)
 
@@ -217,42 +219,32 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // Previous period — must use the same cash-in definition as
-    // the current period (POS + OnlinePayment within the window),
-    // otherwise the "هذا الشهر" number is cycle-based but the
-    // comparison number is invoice-based and the two don't align.
-    const [prevCashAgg, prevOnlineAgg, prevExpAgg] = await Promise.all([
-      prisma.posTransaction.aggregate({
-        _sum: { amount: true },
-        where: {
-          tenant_id: tenantId,
-          ...(branchId ? { branch_id: branchId } : {}),
-          status: 'success',
-          created_at: { gte: prevStart, lt: prevEnd },
-        },
-      }),
-      prisma.onlinePayment.aggregate({
-        _sum: { amount: true },
-        where: {
-          tenant_id: tenantId,
-          status: 'success',
-          created_at: { gte: prevStart, lt: prevEnd },
-        },
+    // Previous period — must use the SAME definition as the
+    // current period (invoice amount_paid for that period) so the
+    // two numbers are comparable. Previously I briefly switched
+    // both sides to cash-in; owners asked me to flip back to the
+    // invoice-based definition for consistency with total_due.
+    const [prevInvoiceAgg, prevExpAgg] = await Promise.all([
+      prisma.invoice.aggregate({
+        _sum: { amount_paid: true },
+        where: { ...where, billing_month: prevMonth, billing_year: prevYear },
       }),
       prisma.expense.aggregate({
         _sum: { amount: true },
         where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: prevStart, lt: prevEnd } },
       }),
     ])
-    const prevCollected =
-      Number(prevCashAgg._sum.amount || 0) +
-      Number(prevOnlineAgg._sum.amount || 0)
+    const prevCollected = Number(prevInvoiceAgg._sum.amount_paid || 0)
     const prevNet = prevCollected - Number(prevExpAgg._sum.amount || 0)
     const growthPercent = prevCollected > 0 ? Math.round(((totalCollected - prevCollected) / prevCollected) * 100) : 0
 
     return NextResponse.json({
       total_due: totalDue,
       total_collected: totalCollected,
+      // Real cash flow for this cycle (POS + Online since cycle
+      // start). Kept separate from total_collected so widgets can
+      // choose whichever view they need without another refactor.
+      cycle_cash_in: cycleCashIn,
       // Actual money still owed: unpaid invoice remainders + rolled-
       // over subscriber debt. The UI widget binds to this value so
       // "غير مدفوع" reflects real outstanding, not a subtraction.
