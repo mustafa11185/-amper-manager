@@ -1226,10 +1226,26 @@ model Notification {
   body        String
   is_read     Boolean  @default(false)
   payload     Json?
+  dedupe_key  String?
   created_at  DateTime @default(now())
   branch      Branch   @relation(fields: [branch_id], references: [id])
+  @@unique([tenant_id, dedupe_key])
   @@index([branch_id, is_read])
   @@map("notifications")
+}
+
+model NotificationPreference {
+  id         String   @id @default(uuid())
+  tenant_id  String
+  user_id    String?  // null = tenant-wide default
+  user_type  String?  // "staff" | "owner" | "kiosk"
+  type       String   // notification type this preference applies to
+  enabled    Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  @@unique([tenant_id, user_id, type])
+  @@index([tenant_id])
+  @@map("notification_preferences")
 }
 
 model MarketingMessage {
@@ -1756,4 +1772,18 @@ model SalaryPayment {
   staff             Staff    @relation(fields: [staff_id], references: [id])
   tenant            Tenant   @relation(fields: [tenant_id], references: [id])
   @@map("salary_payments")
+}
+
+model AppVersion {
+  id             String   @id @default(uuid())
+  app_key        String   @unique // "staff" | "iot" | "partner"
+  min_version    String
+  latest_version String
+  update_url     String?
+  changelog_ar   String?
+  changelog_en   String?
+  force          Boolean  @default(false)
+  released_at    DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  @@map("app_versions")
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Tajawal, Rajdhani, JetBrains_Mono } from 'next/font/google'
 import SessionProvider from '@/components/SessionProvider'
+import UpdateBanner from '@/components/UpdateBanner'
 import { Toaster } from 'react-hot-toast'
 import './globals.css'
 
@@ -48,6 +49,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-dvh bg-bg-base font-tajawal">
         <SessionProvider>
+          <UpdateBanner />
           {children}
         </SessionProvider>
         <Toaster

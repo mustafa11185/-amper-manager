@@ -7,14 +7,16 @@ import {
   Building2, DollarSign, Wallet, MessageSquare, Users, GitBranch,
   QrCode, Smartphone, Monitor, MapPin, Tag, Palette, CreditCard,
   ChevronLeft, LogOut, Shield, LayoutList, Pencil, Trash2, Plus,
+  Bell,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
+import NotificationPreferencesSection from '@/components/NotificationPreferencesSection'
 
 type SettingsSection =
   | 'menu' | 'generator' | 'pricing' | 'wallets' | 'branch-info' | 'payment' | 'whatsapp'
   | 'staff' | 'branches' | 'alleys' | 'kiosk' | 'subscriber-app' | 'pos-devices'
-  | 'operators' | 'staff-tracking' | 'discounts' | 'theme'
+  | 'operators' | 'staff-tracking' | 'discounts' | 'theme' | 'notifications'
 
 export default function SettingsPage() {
   const { data: session } = useSession()
@@ -50,6 +52,7 @@ export default function SettingsPage() {
         {section === 'staff-tracking' && <StaffTrackingSection />}
         {section === 'discounts' && <DiscountsSection />}
         {section === 'theme' && <ThemeSection />}
+        {section === 'notifications' && <NotificationPreferencesSection />}
       </div>
     )
   }
@@ -104,6 +107,7 @@ export default function SettingsPage() {
             <MenuItem icon={Shield} label="إدارة المشغلين" onClick={() => setSection('operators')} />
             <MenuItem icon={MapPin} label="تتبع الموظفين" onClick={() => setSection('staff-tracking')} />
             <MenuItem icon={Tag} label="الخصومات" onClick={() => setSection('discounts')} />
+            <MenuItem icon={Bell} label="تفضيلات التنبيهات" onClick={() => setSection('notifications')} />
           </>
         )}
         {/* Accountant with can_collect: wallet only */}

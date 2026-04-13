@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { createNotification } from '@/lib/notifications'
+
+const DAY_MS = 24 * 60 * 60 * 1000
+// Days-before-expiry at which to notify the owner (one notification per day).
+const EXPIRY_WARNING_DAYS = [7, 3, 1]
 
 export async function POST() {
   try {
@@ -10,11 +15,34 @@ export async function POST() {
 
     let gracePeriodCount = 0
     let lockedCount = 0
+    let expiringWarned = 0
 
     for (const tenant of tenants) {
       const subEnd = tenant.subscription_ends_at!
       const graceEnd = tenant.grace_period_ends_at
         ?? new Date(subEnd.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days grace
+
+      // Proactive expiry warning — BEFORE subscription ends.
+      if (now < subEnd) {
+        const daysLeft = Math.ceil((subEnd.getTime() - now.getTime()) / DAY_MS)
+        if (EXPIRY_WARNING_DAYS.includes(daysLeft)) {
+          const branch = await prisma.branch.findFirst({
+            where: { tenant_id: tenant.id, is_active: true },
+          })
+          if (branch) {
+            const res = await createNotification({
+              tenant_id: tenant.id,
+              branch_id: branch.id,
+              type: 'subscription_expiring',
+              title: `اشتراكك ينتهي خلال ${daysLeft} ${daysLeft === 1 ? 'يوم' : 'أيام'}`,
+              body: `اشتراك أمبير ينتهي في ${subEnd.toLocaleDateString('ar-IQ')}. جدّد الآن لتجنّب الإيقاف.`,
+              payload: { days_left: daysLeft, ends_at: subEnd.toISOString() },
+              dedupe_key: `sub_expiring_${tenant.id}_${daysLeft}`,
+            })
+            if (res.created) expiringWarned++
+          }
+        }
+      }
 
       if (now > subEnd && now <= graceEnd) {
         // In grace period
@@ -77,7 +105,12 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({ ok: true, grace_period: gracePeriodCount, locked: lockedCount })
+    return NextResponse.json({
+      ok: true,
+      grace_period: gracePeriodCount,
+      locked: lockedCount,
+      expiring_warned: expiringWarned,
+    })
   } catch (err: any) {
     console.error('[check-subscriptions] Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })

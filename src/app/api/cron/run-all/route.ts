@@ -54,6 +54,8 @@ export async function POST(req: NextRequest) {
   // ── Daily at 09:00 Iraq time ──
   if (iraqHour === 9 && iraqMin < 5) {
     await call('check-unpaid-subscribers')
+    await call('check-subscriptions')
+    await call('check-inactive-generators')
   }
 
   // ── AI Monthly Report: day 25 at 08:00 Iraq time ──
