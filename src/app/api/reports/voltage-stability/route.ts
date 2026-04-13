@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
 // Voltage stability report — patterns + critical events + per-generator stats
 export async function GET(req: NextRequest) {
@@ -10,10 +11,9 @@ export async function GET(req: NextRequest) {
 
   const user = session.user as any
   const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
 
-  const where: any = { tenant_id: tenantId }
-  if (user.role !== 'owner' && branchId) where.branch_id = branchId
+  const branchIds = await resolveBranchIds(req, user)
+  const where: any = { tenant_id: tenantId, branch_id: { in: branchIds } }
 
   const days = parseInt(req.nextUrl.searchParams.get('days') ?? '30')
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
@@ -61,15 +61,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Recent average voltage per branch (from telemetry)
-  const branchIds = await prisma.branch.findMany({
-    where: user.role === 'owner' ? { tenant_id: tenantId } : { id: branchId },
-    select: { id: true },
-  })
+  // Recent average voltage per branch (from telemetry) — reuse the
+  // same branchIds we already resolved at the top of the handler.
   const recentAvg = await prisma.iotTelemetry.aggregate({
     _avg: { voltage_v: true },
     where: {
-      device: { branch_id: { in: branchIds.map(b => b.id) } },
+      device: { branch_id: { in: branchIds } },
       voltage_v: { gt: 50 },
       recorded_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     },

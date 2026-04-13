@@ -2,21 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
 // Lists all engines + their maintenance status (overdue / due soon / OK)
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
 
-  const branches = await prisma.branch.findMany({
-    where: user.role === 'owner' ? { tenant_id: tenantId } : { id: branchId },
-    select: { id: true },
-  })
-  const branchIds = branches.map(b => b.id)
+  const branchIds = await resolveBranchIds(req, user)
 
   const engines = await prisma.engine.findMany({
     where: { generator: { branch_id: { in: branchIds } } },

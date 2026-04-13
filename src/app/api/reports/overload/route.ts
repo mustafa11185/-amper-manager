@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
 // Comprehensive overload report — affected generators + estimated lost revenue
 export async function GET(req: NextRequest) {
@@ -10,10 +11,9 @@ export async function GET(req: NextRequest) {
 
   const user = session.user as any
   const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
 
-  const where: any = { tenant_id: tenantId }
-  if (user.role !== 'owner' && branchId) where.branch_id = branchId
+  const branchIds = await resolveBranchIds(req, user)
+  const where: any = { tenant_id: tenantId, branch_id: { in: branchIds } }
 
   const days = parseInt(req.nextUrl.searchParams.get('days') ?? '30')
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)

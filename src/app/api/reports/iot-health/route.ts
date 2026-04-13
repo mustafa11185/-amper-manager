@@ -2,18 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
 // IoT health report — uptime % per device + offline incidents + firmware versions
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
   const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
 
-  const where: any = { tenant_id: tenantId }
-  if (user.role !== 'owner' && branchId) where.branch_id = branchId
+  const branchIds = await resolveBranchIds(req, user)
+  const where: any = { tenant_id: tenantId, branch_id: { in: branchIds } }
 
   const devices = await prisma.iotDevice.findMany({
     where,

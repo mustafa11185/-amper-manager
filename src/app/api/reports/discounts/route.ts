@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -11,11 +12,7 @@ export async function GET() {
   const tenantId = user.tenantId as string
 
   try {
-    const branches = await prisma.branch.findMany({
-      where: user.role === 'owner' ? { tenant_id: tenantId } : { id: user.branchId },
-      select: { id: true },
-    })
-    const branchIds = branches.map(b => b.id)
+    const branchIds = await resolveBranchIds(req, user)
     if (branchIds.length === 0) {
       return NextResponse.json({ total_discounts: 0, discount_count: 0, total_tips: 0, tip_count: 0, by_staff: [] })
     }

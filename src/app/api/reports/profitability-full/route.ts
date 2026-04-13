@@ -2,21 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
 // Detailed profitability — last 6 months per generator with full breakdown
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
 
-  const branches = await prisma.branch.findMany({
-    where: user.role === 'owner' ? { tenant_id: tenantId } : { id: branchId },
-    select: { id: true },
-  })
-  const branchIds = branches.map(b => b.id)
+  const branchIds = await resolveBranchIds(req, user)
 
   const generators = await prisma.generator.findMany({
     where: { branch_id: { in: branchIds }, is_active: true },

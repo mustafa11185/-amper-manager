@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveBranchIds } from '@/lib/branch-scope'
 
 // Carbon footprint report — based on diesel consumption
 // 1 liter of diesel ≈ 2.68 kg CO2
@@ -13,14 +14,13 @@ export async function GET(req: NextRequest) {
 
   const user = session.user as any
   const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
 
   const months = parseInt(req.nextUrl.searchParams.get('months') ?? '6')
   const since = new Date()
   since.setMonth(since.getMonth() - months)
 
-  const where: any = { tenant_id: tenantId, window_end: { gte: since } }
-  if (user.role !== 'owner' && branchId) where.branch_id = branchId
+  const branchIds = await resolveBranchIds(req, user)
+  const where: any = { tenant_id: tenantId, window_end: { gte: since }, branch_id: { in: branchIds } }
 
   const consumption = await prisma.fuelConsumption.findMany({
     where,
