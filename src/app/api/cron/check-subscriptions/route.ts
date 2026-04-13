@@ -61,15 +61,14 @@ export async function POST() {
             where: { tenant_id: tenant.id, is_active: true },
           })
           if (branch) {
-            await prisma.notification.create({
-              data: {
-                branch_id: branch.id,
-                tenant_id: tenant.id,
-                type: 'subscription_warning',
-                title: 'اشتراك على وشك الانتهاء ⚠️',
-                body: `⚠️ اشتراكك انتهى — لديك ${daysLeft} أيام للتجديد`,
-                payload: { days_left: daysLeft, grace_ends: graceEnd.toISOString() },
-              },
+            await createNotification({
+              tenant_id: tenant.id,
+              branch_id: branch.id,
+              type: 'subscription_warning',
+              title: 'اشتراك على وشك الانتهاء ⚠️',
+              body: `⚠️ اشتراكك انتهى — لديك ${daysLeft} أيام للتجديد`,
+              payload: { days_left: daysLeft, grace_ends: graceEnd.toISOString() },
+              dedupe_key: `sub_grace_${tenant.id}_${graceEnd.toISOString().slice(0, 10)}`,
             })
           }
           gracePeriodCount++
@@ -90,14 +89,13 @@ export async function POST() {
             where: { tenant_id: tenant.id },
           })
           if (branch) {
-            await prisma.notification.create({
-              data: {
-                branch_id: branch.id,
-                tenant_id: tenant.id,
-                type: 'subscription_locked',
-                title: 'تم إيقاف الحساب 🔴',
-                body: '🔴 تم إيقاف حسابك — تواصل مع أمبير للتجديد',
-              },
+            await createNotification({
+              tenant_id: tenant.id,
+              branch_id: branch.id,
+              type: 'subscription_locked',
+              title: 'تم إيقاف الحساب 🔴',
+              body: '🔴 تم إيقاف حسابك — تواصل مع أمبير للتجديد',
+              dedupe_key: `sub_locked_${tenant.id}`,
             })
           }
           lockedCount++
