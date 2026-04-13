@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveBranchIds } from '@/lib/branch-scope'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -14,10 +15,16 @@ export async function GET(req: NextRequest) {
   const branchIds = await resolveBranchIds(req, user)
   if (branchIds.length === 0) return NextResponse.json({ error: 'لا يوجد فرع' }, { status: 404 })
 
+  // Every "هذا الشهر" on the reports hub actually means "this
+  // billing cycle" — from the last non-reversed invoice generation
+  // for the active branch up to now. Calendar-based month filters
+  // made the reports show old-cycle numbers after a mid-month
+  // regeneration.
   const now = new Date()
-  const currentMonth = now.getMonth() + 1
-  const currentYear = now.getFullYear()
-  const monthStart = new Date(currentYear, currentMonth - 1, 1)
+  const cycle = await getCurrentCycleWindow(branchIds[0])
+  const currentMonth = cycle.month
+  const currentYear = cycle.year
+  const monthStart = cycle.start
 
   try {
     // ══════════════════════════════════════════
@@ -161,7 +168,10 @@ export async function GET(req: NextRequest) {
     // ══════════════════════════════════════════
     //  BATCH 4: Attendance stats (batch — no N+1)
     // ══════════════════════════════════════════
-    const workingDays = Math.min(now.getDate(), 30)
+    // Days since the cycle started — replaces the old "day of month"
+    // so attendance reports reset with each generation, not each
+    // calendar month boundary.
+    const workingDays = Math.max(1, Math.ceil((now.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24)))
     const attendanceStats = allStaff.map(s => {
       const shifts = s.role === 'collector'
         ? (collShiftMap.get(s.id) ?? [])
