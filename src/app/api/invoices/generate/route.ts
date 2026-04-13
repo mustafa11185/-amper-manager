@@ -109,11 +109,28 @@ export async function POST(req: NextRequest) {
       select: { id: true, amperage: true, subscription_type: true, tenant_id: true, total_debt: true },
     })
 
-    // Count unpaid invoices that will become debt
+    // Count unpaid invoices that will become debt.
+    //
+    // CRITICAL: only roll invoices from PAST months. Previously this
+    // query matched every unpaid invoice in the branch, which meant
+    // re-generating the current month silently rolled all of the
+    // just-created month-M invoices to debt and then Step 2 saw them
+    // as "existing + fully_paid" and skipped creating replacements.
+    // Result: after generation, nobody had a fresh invoice for the
+    // new month — every subscriber had extra debt instead.
     const unpaidInvoices = await prisma.invoice.findMany({
       where: {
         branch_id,
         is_fully_paid: false,
+        OR: [
+          { billing_year: { lt: billingYear } },
+          {
+            AND: [
+              { billing_year: billingYear },
+              { billing_month: { lt: billingMonth } },
+            ],
+          },
+        ],
       },
       select: { id: true, subscriber_id: true, total_amount_due: true, amount_paid: true },
     })
@@ -195,8 +212,8 @@ export async function POST(req: NextRequest) {
               invoice_number: invoiceNumber,
             },
           })
+          totalCreated++
         }
-        totalCreated++
       }
     }, { maxWait: 10000, timeout: 60000 })
 
