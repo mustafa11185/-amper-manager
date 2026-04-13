@@ -110,6 +110,34 @@ export async function GET(req: NextRequest) {
       where: { ...where, billing_month: month, billing_year: year, is_fully_paid: false },
     })
 
+    // Real outstanding amount owed to the owner right now =
+    //   (remaining balance on every unpaid invoice, any period)
+    // + (accumulated debt on active subscribers from prior cycles)
+    //
+    // The old computation `total_due - total_collected` was wrong
+    // because it mixed a current-cycle theoretical ceiling with a
+    // cash-in number that includes late payments for OLDER invoices.
+    // This new query returns exactly what subscribers still owe.
+    const [unpaidInvoicesAgg, debtAgg] = await Promise.all([
+      prisma.invoice.aggregate({
+        where: { ...where, is_fully_paid: false },
+        _sum: { total_amount_due: true, amount_paid: true },
+      }),
+      prisma.subscriber.aggregate({
+        _sum: { total_debt: true },
+        where: {
+          tenant_id: tenantId,
+          ...(branchId ? { branch_id: branchId } : {}),
+          is_active: true,
+        },
+      }),
+    ])
+    const unpaidInvoiceRemaining =
+      Number(unpaidInvoicesAgg._sum.total_amount_due || 0) -
+      Number(unpaidInvoicesAgg._sum.amount_paid || 0)
+    const totalDebt = Number(debtAgg._sum.total_debt || 0)
+    const realUncollected = Math.max(0, unpaidInvoiceRemaining) + totalDebt
+
     // Subscribers
     const subsCount = await prisma.subscriber.count({ where: { tenant_id: tenantId, is_active: true } })
 
@@ -225,7 +253,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       total_due: totalDue,
       total_collected: totalCollected,
-      total_uncollected: Math.max(0, totalDue - totalCollected),
+      // Actual money still owed: unpaid invoice remainders + rolled-
+      // over subscriber debt. The UI widget binds to this value so
+      // "غير مدفوع" reflects real outstanding, not a subtraction.
+      total_uncollected: realUncollected,
+      unpaid_invoice_remaining: Math.max(0, unpaidInvoiceRemaining),
+      total_debt: totalDebt,
       collection_rate: totalDue > 0 ? Math.round((totalCollected / totalDue) * 100) : 0,
       subscribers_count: subsCount,
       unpaid_count: unpaidCount,
