@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveBranchIds } from '@/lib/branch-scope'
-import { getCurrentCycleWindow } from '@/lib/billing-cycle'
+import { getCurrentCycleWindow, getPreviousCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -22,9 +22,12 @@ export async function GET(req: NextRequest) {
   // regeneration.
   const now = new Date()
   const cycle = await getCurrentCycleWindow(branchIds[0])
+  const prevCycle = await getPreviousCycleWindow(branchIds[0])
   const currentMonth = cycle.month
   const currentYear = cycle.year
   const monthStart = cycle.start
+  const prevStart = prevCycle.start
+  const prevEnd = prevCycle.end
 
   try {
     // ══════════════════════════════════════════
@@ -33,6 +36,8 @@ export async function GET(req: NextRequest) {
     const [
       cashThisMonth,
       onlineThisMonth,
+      cashLastMonth,
+      onlineLastMonth,
       totalDebtAgg,
       totalInvoices,
       paidInvoices,
@@ -47,13 +52,42 @@ export async function GET(req: NextRequest) {
       expensesThisMonth,
       onlinePayments,
     ] = await Promise.all([
-      prisma.invoice.aggregate({
-        _sum: { amount_paid: true },
-        where: { branch_id: { in: branchIds }, billing_month: currentMonth, billing_year: currentYear, payment_method: { notIn: ['furatpay'] } },
+      // cash_this_month / online_this_month now mean "actual cash
+      // received during this CYCLE window" — POS success + online
+      // success since cycle start. Previously this was invoice-based
+      // amount_paid which diverged from the financial report widget.
+      prisma.posTransaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          branch_id: { in: branchIds },
+          status: 'success',
+          created_at: { gte: monthStart },
+        },
       }),
       prisma.onlinePayment.aggregate({
         _sum: { amount: true },
         where: { tenant_id: tenantId, status: 'success', created_at: { gte: monthStart } },
+      }),
+      // Previous cycle equivalents — power the hub hero "vs last
+      // month" comparison. Without these the Flutter hub always
+      // showed 0% change because cash_last_month didn't exist.
+      prisma.posTransaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          branch_id: { in: branchIds },
+          status: 'success',
+          created_at: { gte: prevStart, lt: prevEnd },
+        },
+      }),
+      prisma.onlinePayment.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          status: 'success',
+          created_at: { gte: prevStart, lt: prevEnd },
+        },
       }),
       prisma.subscriber.aggregate({
         _sum: { total_debt: true },
@@ -229,15 +263,17 @@ export async function GET(req: NextRequest) {
         where: { tenant_id: tenantId, window_end: { gte: monthStart } },
       }),
     ])
-    const cashRevenue = Number(cashThisMonth._sum.amount_paid ?? 0)
+    const cashRevenue = Number(cashThisMonth._sum.amount ?? 0)
     const fuelCost = Number(fuelCostThisMonth._sum.cost_iqd ?? 0)
     const netProfitThisMonth = cashRevenue - fuelCost - totalExpenses
 
     return NextResponse.json({
       financial: {
         monthly_revenue: monthlyRevenue,
-        cash_this_month: Number(cashThisMonth._sum.amount_paid ?? 0),
+        cash_this_month: Number(cashThisMonth._sum.amount ?? 0),
         online_this_month: Number(onlineThisMonth._sum.amount ?? 0),
+        cash_last_month: Number(cashLastMonth._sum.amount ?? 0),
+        online_last_month: Number(onlineLastMonth._sum.amount ?? 0),
         total_debt: Number(totalDebtAgg._sum.total_debt ?? 0),
         collection_rate: totalInvoices > 0 ? Math.round((paidInvoices / totalInvoices) * 100) : 0,
         // NEW
