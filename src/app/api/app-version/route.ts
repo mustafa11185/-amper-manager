@@ -18,7 +18,7 @@ const FALLBACK: Record<string, AppVersionPayload> = {
   staff: {
     min_version: '2.7.0',
     latest_version: '2.8.0',
-    update_url: 'https://github.com/mustafa11185/amper-flutter/releases/download/v2.8.0/Amper-v2.8.0.apk',
+    update_url: 'https://github.com/mustafa11185/amper-flutter-releases/releases/download/v2.8.0/Amper-v2.8.0.apk',
     changelog_ar: 'واجهة المحركات الجديدة: بطاقة لكل محرك بقراءات حيّة (حرارة/حمل/ضغط) + شاشة تفاصيل 4 تبويبات (نظرة عامة/صيانة/قراءات/أحداث) + رسوم بيانية زمنية + تفضيلات التنبيهات + نظام تحديث موحّد',
     changelog_en: null,
     force: false,
