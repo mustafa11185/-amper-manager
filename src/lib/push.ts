@@ -217,4 +217,11 @@ export const pushTemplates = {
     title: '💸 مصروف جديد',
     body: `${category}: ${amount.toLocaleString()} د.ع`,
   }),
+  // App update available
+  updateAvailable: (version: string, changelog?: string | null) => ({
+    title: `⚡ تحديث ${version} متاح`,
+    body: changelog && changelog.length > 0
+      ? changelog.length > 140 ? `${changelog.substring(0, 137)}...` : changelog
+      : 'اضغط هنا لتحميل أحدث إصدار من تطبيق أمبير',
+  }),
 }
