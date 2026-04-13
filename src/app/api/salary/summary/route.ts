@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -10,9 +11,27 @@ export async function GET(req: NextRequest) {
   const user = session.user as any
   const tenantId = user.tenantId as string
   const url = req.nextUrl.searchParams
-  const month = parseInt(url.get('month') || `${new Date().getMonth() + 1}`)
-  const year = parseInt(url.get('year') || `${new Date().getFullYear()}`)
   const branchId = url.get('branch_id') || user.branchId
+  const explicitMonth = url.get('month')
+  const explicitYear = url.get('year')
+
+  // Salaries are now per-CYCLE (user's explicit choice). If month/year
+  // passed, treat as historical calendar lookup; otherwise use current
+  // cycle's billing period.
+  let month: number
+  let year: number
+  if (explicitMonth && explicitYear) {
+    month = parseInt(explicitMonth)
+    year = parseInt(explicitYear)
+  } else if (branchId) {
+    const cycle = await getCurrentCycleWindow(branchId)
+    month = cycle.month
+    year = cycle.year
+  } else {
+    const now = new Date()
+    month = now.getMonth() + 1
+    year = now.getFullYear()
+  }
 
   try {
     // Get all staff with salary config

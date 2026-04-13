@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -25,14 +26,26 @@ export async function POST(req: NextRequest) {
     })
     if (!staff) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
-    const now = new Date()
+    // Tag the tip with the current cycle's billing period so it
+     // groups with that cycle's salary summary.
+    let tipMonth: number
+    let tipYear: number
+    if (staff.branch_id) {
+      const cycle = await getCurrentCycleWindow(staff.branch_id)
+      tipMonth = cycle.month
+      tipYear = cycle.year
+    } else {
+      const now = new Date()
+      tipMonth = now.getMonth() + 1
+      tipYear = now.getFullYear()
+    }
     const payment = await prisma.salaryPayment.create({
       data: {
         staff_id,
         tenant_id: staff.tenant_id,
         branch_id: staff.branch_id,
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
+        month: tipMonth,
+        year: tipYear,
         amount,
         payment_type: 'tip',
         tip_notes: notes || null,

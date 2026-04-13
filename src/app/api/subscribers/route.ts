@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { generateAccessCode, generatePrivacyCode } from '@/lib/access-code'
 import { getActiveBillingPeriod, getActiveBillingPeriodByTenant } from '@/lib/billing-period'
+import { getCurrentCycleWindow, getCurrentCycleWindowByTenant } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -60,9 +61,15 @@ export async function GET(req: NextRequest) {
     delete where.total_debt
     where.is_active = true
 
-    // Use current month for unpaid filter (not pricing effective_from)
-    const bMonth = new Date().getMonth() + 1
-    const bYear = new Date().getFullYear()
+    // Use current cycle's billing period (not calendar month). The
+    // cycle window is scoped to the effective branch — fall back to a
+    // tenant-wide lookup when no branch filter is active.
+    const effectiveBranch = qBranch || (user.role !== 'owner' ? branchId : undefined)
+    const cycle = effectiveBranch
+      ? await getCurrentCycleWindow(effectiveBranch)
+      : await getCurrentCycleWindowByTenant(tenantId)
+    const bMonth = cycle.month
+    const bYear = cycle.year
 
     // Find subscribers who have an UNPAID invoice for this billing period
     const unpaidInvoices = await prisma.invoice.findMany({

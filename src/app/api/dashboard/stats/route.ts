@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -48,26 +49,13 @@ export async function GET(req: NextRequest) {
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-    // Get active billing month from pricing (with null safety)
-    let billingMonth = now.getMonth() + 1
-    let billingYear = now.getFullYear()
-    try {
-      const latestPricing = await prisma.monthlyPricing.findFirst({
-        where: { branch_id: { in: branchIds } },
-        orderBy: { effective_from: 'desc' },
-      })
-      if (latestPricing?.effective_from) {
-        const eff = new Date(latestPricing.effective_from)
-        billingMonth = eff.getMonth() + 1
-        billingYear = eff.getFullYear()
-      }
-    } catch (e) {
-      console.error('[dashboard] monthlyPricing query failed:', e)
-    }
-
-    // Month boundaries for delivery query
-    const monthStart = new Date(billingYear, billingMonth - 1, 1)
-    const monthEnd = new Date(billingYear, billingMonth, 1)
+    // Current billing CYCLE window — starts at last non-reversed
+    // invoice generation for this branch. Every "this month" widget
+    // below actually means "this cycle" (from generation → now).
+    const cycle = await getCurrentCycleWindow(branchIds[0])
+    const billingMonth = cycle.month
+    const billingYear = cycle.year
+    const cycleStart = cycle.start
 
     // Run all queries in parallel with individual error handling
     const [
@@ -121,7 +109,7 @@ export async function GET(req: NextRequest) {
         _sum: { amount: true },
         where: {
           branch_id: { in: branchIds },
-          delivered_at: { gte: monthStart, lt: monthEnd },
+          delivered_at: { gte: cycleStart },
         },
       }).catch(e => { console.error('[dashboard] monthlyDeliveries:', e); return { _sum: { amount: null } } }),
 
@@ -255,7 +243,7 @@ export async function GET(req: NextRequest) {
           tenant_id: tenantId,
           status: 'success',
           invoice_id: null, // Only non-invoice payments (invoice ones are already in amount_paid)
-          created_at: { gte: monthStart, lt: monthEnd },
+          created_at: { gte: cycleStart },
         },
       }).catch(e => { console.error('[dashboard] onlinePayments:', e); return { _sum: { amount: null } } }),
 
@@ -270,7 +258,7 @@ export async function GET(req: NextRequest) {
         _sum: { amount: true },
         where: {
           branch_id: { in: branchIds },
-          created_at: { gte: monthStart, lt: monthEnd },
+          created_at: { gte: cycleStart },
         },
       }).catch(e => { console.error('[dashboard] expenses:', e); return { _sum: { amount: null } } }),
     ])

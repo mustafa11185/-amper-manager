@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export const dynamic = 'force-dynamic'
 
@@ -139,6 +140,12 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ transactions, summary })
 }
 
+async function computeCycleStart(branchIds: string[]): Promise<Date> {
+  if (branchIds.length === 0) return new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  const cycle = await getCurrentCycleWindow(branchIds[0])
+  return cycle.start
+}
+
 function emptySummary() {
   return {
     today_total: 0,
@@ -153,7 +160,8 @@ async function computeSummary(branchIds: string[]) {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const startOfWeek = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000)
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  // "Month" here = current billing cycle (last generation → now)
+  const startOfMonth = await computeCycleStart(branchIds)
 
   const baseWhere = { branch_id: { in: branchIds } }
 

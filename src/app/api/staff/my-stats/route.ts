@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow, getPreviousCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -15,32 +16,38 @@ export async function GET() {
 
   try {
     const now = new Date()
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const lastMonthEnd = thisMonthStart
+    // Cycle windows — "this month" / "last month" in this endpoint
+    // actually mean current cycle and previous cycle.
+    const branchId = user.branchId as string
+    const [cycle, prevCycle] = await Promise.all([
+      getCurrentCycleWindow(branchId),
+      getPreviousCycleWindow(branchId),
+    ])
+    const thisStart = cycle.start
+    const lastStart = prevCycle.start
+    const lastEnd = prevCycle.end
 
     const [cfg, thisSumAgg, thisCount, thisShifts, lastSumAgg, lastCount, lastShifts, weekTxs] = await Promise.all([
       prisma.staffSalaryConfig.findUnique({ where: { staff_id: staffId } }).catch(() => null),
       prisma.posTransaction.aggregate({
         _sum: { amount: true },
-        where: { staff_id: staffId, status: 'success', created_at: { gte: thisMonthStart, lt: thisMonthEnd } },
+        where: { staff_id: staffId, status: 'success', created_at: { gte: thisStart } },
       }),
       prisma.posTransaction.count({
-        where: { staff_id: staffId, status: 'success', created_at: { gte: thisMonthStart, lt: thisMonthEnd } },
+        where: { staff_id: staffId, status: 'success', created_at: { gte: thisStart } },
       }),
       prisma.collectorShift.count({
-        where: { staff_id: staffId, shift_date: { gte: thisMonthStart, lt: thisMonthEnd }, check_in_at: { not: null } },
+        where: { staff_id: staffId, shift_date: { gte: thisStart }, check_in_at: { not: null } },
       }),
       prisma.posTransaction.aggregate({
         _sum: { amount: true },
-        where: { staff_id: staffId, status: 'success', created_at: { gte: lastMonthStart, lt: lastMonthEnd } },
+        where: { staff_id: staffId, status: 'success', created_at: { gte: lastStart, lt: lastEnd } },
       }),
       prisma.posTransaction.count({
-        where: { staff_id: staffId, status: 'success', created_at: { gte: lastMonthStart, lt: lastMonthEnd } },
+        where: { staff_id: staffId, status: 'success', created_at: { gte: lastStart, lt: lastEnd } },
       }),
       prisma.collectorShift.count({
-        where: { staff_id: staffId, shift_date: { gte: lastMonthStart, lt: lastMonthEnd }, check_in_at: { not: null } },
+        where: { staff_id: staffId, shift_date: { gte: lastStart, lt: lastEnd }, check_in_at: { not: null } },
       }),
       prisma.posTransaction.findMany({
         where: {

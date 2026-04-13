@@ -267,6 +267,58 @@ export async function POST(req: NextRequest) {
     )
 
 
+    // ═══════════════════════════════════════════════════════════════
+    //  POST-TRANSACTION INVARIANT CHECK
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // After the transaction commits, verify the world looks the way
+    // we expect it to. If it doesn't, we don't roll anything back (the
+    // tx is already committed), but we DO log it loudly and return a
+    // `verification` block so the caller can surface a warning.
+    //
+    // Invariant #1 — every active subscriber must have exactly one
+    //   invoice for (branch, billing_month, billing_year).
+    // Invariant #2 — no unpaid invoices from PRIOR periods should
+    //   remain (everything earlier should have been rolled to debt).
+    let verification: {
+      ok: boolean
+      active_subscribers: number
+      current_cycle_invoices: number
+      missing: number
+      stale_unpaid_prior: number
+    } = { ok: true, active_subscribers: 0, current_cycle_invoices: 0, missing: 0, stale_unpaid_prior: 0 }
+    try {
+      const [activeCount, cycleInvoiceCount, stalePriorCount] = await Promise.all([
+        prisma.subscriber.count({ where: { branch_id, is_active: true } }),
+        prisma.invoice.count({
+          where: { branch_id, billing_month: billingMonth, billing_year: billingYear },
+        }),
+        prisma.invoice.count({
+          where: {
+            branch_id,
+            is_fully_paid: false,
+            OR: [
+              { billing_year: { lt: billingYear } },
+              { AND: [{ billing_year: billingYear }, { billing_month: { lt: billingMonth } }] },
+            ],
+          },
+        }),
+      ])
+      const missing = Math.max(0, activeCount - cycleInvoiceCount)
+      verification = {
+        ok: missing === 0 && stalePriorCount === 0,
+        active_subscribers: activeCount,
+        current_cycle_invoices: cycleInvoiceCount,
+        missing,
+        stale_unpaid_prior: stalePriorCount,
+      }
+      if (!verification.ok) {
+        console.warn('[generate] invariant violation:', { branch_id, billingMonth, billingYear, verification })
+      }
+    } catch (e: any) {
+      console.error('[generate] verification failed:', e.message)
+    }
+
     // Update generation log with final counts (non-critical)
     try {
       if (generationLog) {
@@ -391,6 +443,7 @@ export async function POST(req: NextRequest) {
       debts_added: totalDebtAdded,
       billing_month: billingMonth,
       billing_year: billingYear,
+      verification,
     })
   } catch (err: any) {
     console.error('Invoice generate error:', err)

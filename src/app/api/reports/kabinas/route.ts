@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveBranchIds } from '@/lib/branch-scope'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -14,9 +15,11 @@ export async function GET(req: NextRequest) {
     const branchIds = await resolveBranchIds(req, user)
     if (branchIds.length === 0) return NextResponse.json({ kabinas: [] })
 
-    const now = new Date()
-    const month = now.getMonth() + 1
-    const year = now.getFullYear()
+    // Current cycle — billing period comes from the last non-reversed
+    // generation for this branch, not the calendar month.
+    const cycle = await getCurrentCycleWindow(branchIds[0])
+    const month = cycle.month
+    const year = cycle.year
 
     const alleys = await prisma.alley.findMany({
       where: { branch_id: { in: branchIds }, is_active: true },

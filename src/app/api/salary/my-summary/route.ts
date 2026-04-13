@@ -2,13 +2,39 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma";
+import { getCurrentCycleWindow } from "@/lib/billing-cycle";
 
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions); if (!session?.user) throw new Error("Unauthorized"); const user = session.user as any;
     const url = req.nextUrl.searchParams;
-    const month = parseInt(url.get("month") || `${new Date().getMonth() + 1}`);
-    const year = parseInt(url.get("year") || `${new Date().getFullYear()}`);
+    const explicitMonth = url.get("month");
+    const explicitYear = url.get("year");
+
+    // Salary is per-CYCLE. Use current cycle window unless caller
+    // passes an explicit month/year (historical lookup).
+    let month: number;
+    let year: number;
+    let cycleStart: Date;
+    let cycleEnd: Date;
+    if (explicitMonth && explicitYear) {
+      month = parseInt(explicitMonth);
+      year = parseInt(explicitYear);
+      cycleStart = new Date(year, month - 1, 1);
+      cycleEnd = new Date(year, month, 1);
+    } else if (user.branchId) {
+      const cycle = await getCurrentCycleWindow(user.branchId);
+      month = cycle.month;
+      year = cycle.year;
+      cycleStart = cycle.start;
+      cycleEnd = new Date();
+    } else {
+      const now = new Date();
+      month = now.getMonth() + 1;
+      year = now.getFullYear();
+      cycleStart = new Date(year, month - 1, 1);
+      cycleEnd = new Date(year, month, 1);
+    }
 
     // 1. Get salary config
     const config = await prisma.staffSalaryConfig.findUnique({
@@ -39,15 +65,12 @@ export async function GET(req: NextRequest) {
     if (salaryPaid >= salaryAgreed && salaryAgreed > 0) status = "paid";
     else if (salaryPaid > 0) status = "partial";
 
-    // 3. Get total collected (POS transactions) this month
-    const monthStart = new Date(year, month - 1, 1);
-    const monthEnd = new Date(year, month, 1);
-
+    // 3. Get total collected (POS transactions) this cycle
     const collections = await prisma.posTransaction.aggregate({
       where: {
         staff_id: user.id,
         status: "success",
-        created_at: { gte: monthStart, lt: monthEnd },
+        created_at: { gte: cycleStart, lt: cycleEnd },
       },
       _sum: { amount: true },
       _count: true,
@@ -59,7 +82,7 @@ export async function GET(req: NextRequest) {
         staff_id: user.id,
         status: "success",
         payment_method: "cash",
-        created_at: { gte: monthStart, lt: monthEnd },
+        created_at: { gte: cycleStart, lt: cycleEnd },
       },
       _sum: { amount: true },
     });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow, getPreviousCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -10,13 +11,58 @@ export async function GET(req: NextRequest) {
   const user = session.user as any
   const tenantId = user.tenantId as string
   const url = req.nextUrl.searchParams
-  const month = parseInt(url.get('month') || `${new Date().getMonth() + 1}`)
-  const year = parseInt(url.get('year') || `${new Date().getFullYear()}`)
   const branchId = url.get('branch_id') || user.branchId
+  const explicitMonth = url.get('month')
+  const explicitYear = url.get('year')
 
   try {
-    const monthStart = new Date(year, month - 1, 1)
-    const monthEnd = new Date(year, month, 1)
+    // If caller passed month/year, treat as historical calendar view;
+    // otherwise use the current cycle window (the default).
+    let month: number
+    let year: number
+    let periodStart: Date
+    let periodEnd: Date
+    let prevStart: Date
+    let prevEnd: Date
+    let prevMonth: number
+    let prevYear: number
+
+    if (explicitMonth && explicitYear) {
+      month = parseInt(explicitMonth)
+      year = parseInt(explicitYear)
+      periodStart = new Date(year, month - 1, 1)
+      periodEnd = new Date(year, month, 1)
+      prevMonth = month === 1 ? 12 : month - 1
+      prevYear = month === 1 ? year - 1 : year
+      prevStart = new Date(prevYear, prevMonth - 1, 1)
+      prevEnd = periodStart
+    } else if (branchId) {
+      const [cycle, prev] = await Promise.all([
+        getCurrentCycleWindow(branchId),
+        getPreviousCycleWindow(branchId),
+      ])
+      month = cycle.month
+      year = cycle.year
+      periodStart = cycle.start
+      periodEnd = new Date()
+      prevStart = prev.start
+      prevEnd = prev.end
+      prevMonth = prev.month
+      prevYear = prev.year
+    } else {
+      const now = new Date()
+      month = now.getMonth() + 1
+      year = now.getFullYear()
+      periodStart = new Date(year, month - 1, 1)
+      periodEnd = new Date(year, month, 1)
+      prevMonth = month === 1 ? 12 : month - 1
+      prevYear = month === 1 ? year - 1 : year
+      prevStart = new Date(prevYear, prevMonth - 1, 1)
+      prevEnd = periodStart
+    }
+
+    const monthStart = periodStart
+    const monthEnd = periodEnd
     const where: any = { tenant_id: tenantId }
     if (branchId) where.branch_id = branchId
 
@@ -113,16 +159,14 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // Previous month
-    const prevMonth = month === 1 ? 12 : month - 1
-    const prevYear = month === 1 ? year - 1 : year
+    // Previous period (previous cycle or previous calendar month)
     const prevAgg = await prisma.invoice.aggregate({
       where: { ...where, billing_month: prevMonth, billing_year: prevYear },
       _sum: { amount_paid: true, total_amount_due: true },
     })
     const prevCollected = Number(prevAgg._sum.amount_paid || 0)
     const prevExpAgg = await prisma.expense.aggregate({
-      where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: new Date(prevYear, prevMonth - 1, 1), lt: monthStart } },
+      where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: prevStart, lt: prevEnd } },
       _sum: { amount: true },
     })
     const prevNet = prevCollected - Number(prevExpAgg._sum.amount || 0)

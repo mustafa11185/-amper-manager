@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveBranchIds } from '@/lib/branch-scope'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -17,10 +18,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ total_discounts: 0, discount_count: 0, total_tips: 0, tip_count: 0, by_staff: [] })
     }
 
-    const now = new Date()
-    const month = now.getMonth() + 1
-    const year = now.getFullYear()
-    const monthStart = new Date(year, month - 1, 1)
+    // Cycle-scoped: discounts on this cycle's invoices + tips paid
+    // since the cycle started.
+    const cycle = await getCurrentCycleWindow(branchIds[0])
+    const month = cycle.month
+    const year = cycle.year
+    const monthStart = cycle.start
 
     const [discountInvoices, tipPayments] = await Promise.all([
       prisma.invoice.findMany({

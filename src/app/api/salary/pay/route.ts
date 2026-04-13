@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -25,13 +26,26 @@ export async function POST(req: NextRequest) {
     })
     if (!staff) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
+    // Default month/year = current cycle's billing period (not calendar)
+    let defaultMonth: number
+    let defaultYear: number
+    if (staff.branch_id) {
+      const cycle = await getCurrentCycleWindow(staff.branch_id)
+      defaultMonth = cycle.month
+      defaultYear = cycle.year
+    } else {
+      const now = new Date()
+      defaultMonth = now.getMonth() + 1
+      defaultYear = now.getFullYear()
+    }
+
     const payment = await prisma.salaryPayment.create({
       data: {
         staff_id,
         tenant_id: staff.tenant_id,
         branch_id: staff.branch_id,
-        month: month || new Date().getMonth() + 1,
-        year: year || new Date().getFullYear(),
+        month: month || defaultMonth,
+        year: year || defaultYear,
         amount,
         payment_type: 'salary',
         paid_from_delivery: paid_from_delivery || false,

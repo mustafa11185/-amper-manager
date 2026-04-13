@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 // Powers all the new widgets on the staff dashboard in one round-trip:
 //   • today's collection (cash/card/wallet split, total today vs yesterday)
@@ -27,7 +28,9 @@ export async function GET() {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1)
   const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1)
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  // Current cycle — replaces the old calendar monthStart.
+  const cycle = await getCurrentCycleWindow(branchId)
+  const cycleStart = cycle.start
 
   // ─── 1. Today's collection (split by payment method) ───────
   let collection: any = { total_today: 0, total_yesterday: 0, by_method: {}, count_today: 0 }
@@ -63,24 +66,12 @@ export async function GET() {
   // Progress = how many of them have been paid today (by anyone in branch).
   let goal: any = { target: 0, done_today: 0, progress_pct: 0 }
   try {
-    const latestPricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: branchId },
-      orderBy: { effective_from: 'desc' },
-    })
-    let bMonth = now.getMonth() + 1
-    let bYear = now.getFullYear()
-    if (latestPricing) {
-      const eff = new Date(latestPricing.effective_from)
-      bMonth = eff.getMonth() + 1
-      bYear = eff.getFullYear()
-    }
-
     const [unpaidCount, paidTodayCount] = await Promise.all([
       prisma.invoice.count({
         where: {
           branch_id: branchId,
-          billing_month: bMonth,
-          billing_year: bYear,
+          billing_month: cycle.month,
+          billing_year: cycle.year,
           is_fully_paid: false,
         },
       }),
@@ -106,20 +97,8 @@ export async function GET() {
   // ─── 3. My kabinas (alleys in branch + unpaid counts) ──────
   let kabinas: any[] = []
   try {
-    // Same paid-this-cycle logic as the manager widgets endpoint
-    const latestPricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: branchId },
-      orderBy: { effective_from: 'desc' },
-    })
-    let bMonth = now.getMonth() + 1
-    let bYear = now.getFullYear()
-    if (latestPricing) {
-      const eff = new Date(latestPricing.effective_from)
-      bMonth = eff.getMonth() + 1
-      bYear = eff.getFullYear()
-    }
     const paid = await prisma.invoice.findMany({
-      where: { branch_id: branchId, billing_month: bMonth, billing_year: bYear, is_fully_paid: true },
+      where: { branch_id: branchId, billing_month: cycle.month, billing_year: cycle.year, is_fully_paid: true },
       select: { subscriber_id: true },
       distinct: ['subscriber_id'],
     })
@@ -150,7 +129,7 @@ export async function GET() {
       where: {
         tenant_id: tenantId,
         status: 'success',
-        created_at: { gte: monthStart },
+        created_at: { gte: cycleStart },
       },
     })
     const ranked = grouped

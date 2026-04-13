@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 // Single round-trip endpoint that powers all the new manager dashboard
 // widgets (kabinas overview, IoT live status, partnership earnings,
@@ -24,32 +25,24 @@ export async function GET(req: NextRequest) {
   const branches = await prisma.branch.findMany({ where: branchScope, select: { id: true } })
   const branchIds = branches.map(b => b.id)
 
+  // Cycle window — every "this month" widget below actually means
+  // "this cycle" (from last invoice generation → now).
+  const cycle = branchIds.length > 0
+    ? await getCurrentCycleWindow(branchIds[0])
+    : { start: new Date(new Date().getFullYear(), new Date().getMonth(), 1), month: new Date().getMonth() + 1, year: new Date().getFullYear(), source: 'calendar' as const, logId: null }
+
   // ─── 1. Kabinas overview ────────────────────────────────────
   // Top kabinas by subscriber count + paid/unpaid breakdown for the
   // current billing month so the manager can see collection rate at a
   // glance per kabina.
   let kabinas: any[] = []
   try {
-    // Active billing month derived from latest pricing
-    const latestPricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: { in: branchIds } },
-      orderBy: { effective_from: 'desc' },
-    })
-    const now = new Date()
-    let bMonth = now.getMonth() + 1
-    let bYear = now.getFullYear()
-    if (latestPricing) {
-      const eff = new Date(latestPricing.effective_from)
-      bMonth = eff.getMonth() + 1
-      bYear = eff.getFullYear()
-    }
-
-    // Subscribers paid this billing cycle
+    // Subscribers paid this cycle — period comes from current cycle
     const paid = await prisma.invoice.findMany({
       where: {
         branch_id: { in: branchIds },
-        billing_month: bMonth,
-        billing_year: bYear,
+        billing_month: cycle.month,
+        billing_year: cycle.year,
         is_fully_paid: true,
       },
       select: { subscriber_id: true },
@@ -141,19 +134,18 @@ export async function GET(req: NextRequest) {
     })
 
     if (partners.length > 0) {
-      // Net profit = collected revenue this month − recorded expenses
-      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      // Net profit = collected revenue this cycle − recorded expenses
       const collected = await prisma.invoice.aggregate({
         _sum: { amount_paid: true },
         where: {
           branch_id: { in: branchIds },
-          updated_at: { gte: monthStart },
+          updated_at: { gte: cycle.start },
           is_fully_paid: true,
         },
       })
       const expenses = await prisma.expense.aggregate({
         _sum: { amount: true },
-        where: { branch_id: { in: branchIds }, created_at: { gte: monthStart } },
+        where: { branch_id: { in: branchIds }, created_at: { gte: cycle.start } },
       }).catch(() => ({ _sum: { amount: 0 } } as any))
 
       const revenue = Number(collected._sum.amount_paid ?? 0)

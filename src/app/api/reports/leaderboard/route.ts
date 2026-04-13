@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveBranchIds } from '@/lib/branch-scope'
+import { getCurrentCycleWindow } from '@/lib/billing-cycle'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -15,8 +16,10 @@ export async function GET(req: NextRequest) {
     const branchIds = await resolveBranchIds(req, user)
     if (branchIds.length === 0) return NextResponse.json({ collectors: [] })
 
-    const now = new Date()
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    // Leaderboard is cycle-scoped: counts payments/shifts since last
+    // invoice generation so "ترتيب هذا الشهر" resets with each cycle.
+    const cycle = await getCurrentCycleWindow(branchIds[0])
+    const monthStart = cycle.start
 
     const collectors = await prisma.staff.findMany({
       where: {
