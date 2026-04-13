@@ -10,12 +10,18 @@ export async function GET(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  const tenantId = user.tenantId as string
 
   try {
     const branchIds = await resolveBranchIds(req, user)
     if (branchIds.length === 0) {
-      return NextResponse.json({ forecast: 0, current_mtd: 0, days_remaining: 0, avg_daily: 0, confidence: 'low' })
+      return NextResponse.json({
+        forecast: 0,
+        current_mtd: 0,
+        total_due: 0,
+        days_remaining: 0,
+        avg_daily: 0,
+        confidence: 'low',
+      })
     }
 
     // Current CYCLE window — forecast projects to the end of this
@@ -26,10 +32,10 @@ export async function GET(req: NextRequest) {
     const daysElapsed = Math.max(1, Math.ceil((now.getTime() - cycle.start.getTime()) / (1000 * 60 * 60 * 24)))
     const daysRemaining = Math.max(0, CYCLE_LENGTH_DAYS - daysElapsed)
 
-    // Past 3 cycles — pull the prior non-reversed generation logs
-    // and use each one's (billing_month, billing_year) to fetch
-    // historical cash flow. Falls back to last 3 calendar months
-    // if the log table is thin.
+    // Past 3 cycles — pull the prior non-reversed generation logs.
+    // We read historical amount_paid by (billing_month, billing_year)
+    // instead of a time window so numbers MATCH the financial
+    // report (total_collected) and the revenue bars.
     const priorLogs = await prisma.invoiceGenerationLog.findMany({
       where: { branch_id: branchIds[0], is_reversed: false },
       orderBy: { generated_at: 'desc' },
@@ -37,77 +43,48 @@ export async function GET(req: NextRequest) {
       select: { generated_at: true, billing_month: true, billing_year: true },
     }).catch(() => [] as Array<{ generated_at: Date; billing_month: number; billing_year: number }>)
 
-    const past: Array<{ m: number; y: number; start: Date; end: Date }> = []
+    const past: Array<{ m: number; y: number }> = []
     if (priorLogs.length >= 2) {
-      // Use the windows between consecutive logs.
       for (let i = 1; i < priorLogs.length; i++) {
-        const start = priorLogs[i].generated_at
-        const end = priorLogs[i - 1].generated_at
         past.push({
           m: priorLogs[i].billing_month,
           y: priorLogs[i].billing_year,
-          start,
-          end,
         })
       }
     } else {
       // Fallback: last 3 calendar months
       for (let i = 1; i <= 3; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        const end = new Date(now.getFullYear(), now.getMonth() - (i - 1), 1)
-        past.push({
-          m: d.getMonth() + 1,
-          y: d.getFullYear(),
-          start: d,
-          end,
-        })
+        past.push({ m: d.getMonth() + 1, y: d.getFullYear() })
       }
     }
 
-    // Current cycle revenue = actual cash received since cycle start
-    // (POS + Online). This matches the financial report's
-    // "total_collected" so the forecast card and the financial card
-    // agree.
-    const [cashNowAgg, onlineNowAgg, ...pastAggs] = await Promise.all([
-      prisma.posTransaction.aggregate({
-        _sum: { amount: true },
+    // Current cycle "collected so far" = sum(amount_paid) on the
+    // CURRENT cycle's invoices. Matches /reports/financial's
+    // total_collected so the forecast screen and the financial
+    // report show the same baseline number.
+    //
+    // Also return total_due for the cycle so the UI can show
+    // "X من إيرادات الشهر Y" progress.
+    const [currentAgg, ...pastAggs] = await Promise.all([
+      prisma.invoice.aggregate({
+        _sum: { amount_paid: true, total_amount_due: true },
         where: {
-          tenant_id: tenantId,
           branch_id: { in: branchIds },
-          status: 'success',
-          created_at: { gte: cycle.start },
+          billing_month: cycle.month,
+          billing_year: cycle.year,
         },
       }),
-      prisma.onlinePayment.aggregate({
-        _sum: { amount: true },
-        where: {
-          tenant_id: tenantId,
-          status: 'success',
-          created_at: { gte: cycle.start },
-        },
-      }),
-      ...past.map(async ({ start, end }) => {
-        const [cash, online] = await Promise.all([
-          prisma.posTransaction.aggregate({
-            _sum: { amount: true },
-            where: {
-              tenant_id: tenantId,
-              branch_id: { in: branchIds },
-              status: 'success',
-              created_at: { gte: start, lt: end },
-            },
-          }),
-          prisma.onlinePayment.aggregate({
-            _sum: { amount: true },
-            where: {
-              tenant_id: tenantId,
-              status: 'success',
-              created_at: { gte: start, lt: end },
-            },
-          }),
-        ])
-        return Number(cash._sum.amount ?? 0) + Number(online._sum.amount ?? 0)
-      }),
+      ...past.map(({ m, y }) =>
+        prisma.invoice.aggregate({
+          _sum: { amount_paid: true },
+          where: {
+            branch_id: { in: branchIds },
+            billing_month: m,
+            billing_year: y,
+          },
+        }).then(a => Number(a._sum.amount_paid ?? 0))
+      ),
     ])
 
     const pastTotals = pastAggs as number[]
@@ -115,8 +92,15 @@ export async function GET(req: NextRequest) {
     const avgMonth = nonZero.length > 0 ? nonZero.reduce((s, t) => s + t, 0) / nonZero.length : 0
     const avgDaily = avgMonth / CYCLE_LENGTH_DAYS
 
-    const currentMtd = Number(cashNowAgg._sum.amount ?? 0) + Number(onlineNowAgg._sum.amount ?? 0)
-    const forecast = Math.round(currentMtd + (avgDaily * daysRemaining))
+    const currentMtd = Number(currentAgg._sum.amount_paid ?? 0)
+    const totalDue = Number(currentAgg._sum.total_amount_due ?? 0)
+    // Forecast = collected so far + (avg daily rate × remaining days).
+    // Cap at the cycle's total_due — no point projecting more than
+    // the invoices actually charge for this cycle.
+    const rawForecast = currentMtd + (avgDaily * daysRemaining)
+    const forecast = totalDue > 0
+      ? Math.round(Math.min(rawForecast, totalDue))
+      : Math.round(rawForecast)
 
     let confidence: 'low' | 'medium' | 'high' = 'low'
     if (nonZero.length === 3) confidence = 'high'
@@ -125,6 +109,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       forecast,
       current_mtd: currentMtd,
+      total_due: totalDue,
+      collection_rate: totalDue > 0 ? Math.round((currentMtd / totalDue) * 100) : 0,
       days_remaining: daysRemaining,
       days_elapsed: daysElapsed,
       avg_daily: Math.round(avgDaily),
