@@ -22,6 +22,36 @@ import { sendPushToBranch, pushTemplates } from '@/lib/push'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+// Same shape as the fallback in /api/app-version — used when the
+// AppVersion table hasn't been seeded yet on a given environment
+// (e.g. production DB on Render doesn't have the row yet).
+const FALLBACK_APP_INFO: Record<
+  string,
+  { min_version: string; latest_version: string; update_url: string | null; changelog_ar: string | null; force: boolean }
+> = {
+  staff: {
+    min_version: '2.7.0',
+    latest_version: '2.8.0',
+    update_url: 'https://github.com/mustafa11185/amper-flutter-releases/releases/download/v2.8.0/Amper-v2.8.0.apk',
+    changelog_ar: 'واجهة المحركات الجديدة: بطاقة لكل محرك بقراءات حيّة (حرارة/حمل/ضغط) + شاشة تفاصيل 4 تبويبات (نظرة عامة/صيانة/قراءات/أحداث) + رسوم بيانية زمنية + تفضيلات التنبيهات + نظام تحديث موحّد',
+    force: false,
+  },
+  iot: {
+    min_version: '1.0.0',
+    latest_version: '1.0.0',
+    update_url: null,
+    changelog_ar: 'الإصدار الأولي',
+    force: false,
+  },
+  partner: {
+    min_version: '1.0.0',
+    latest_version: '1.0.0',
+    update_url: null,
+    changelog_ar: 'الإصدار الأولي',
+    force: false,
+  },
+}
+
 export async function POST(req: NextRequest) {
   // Optional shared-secret gate
   const cronSecret = process.env.CRON_SECRET
@@ -36,12 +66,23 @@ export async function POST(req: NextRequest) {
   const app = (body.app || 'staff').toLowerCase()
   const force = body.force === true
 
-  // Pull current version info from the AppVersion table (same source
-  // the /api/app-version endpoint uses).
-  const av = await prisma.appVersion.findUnique({ where: { app_key: app } })
-  if (!av) {
-    return NextResponse.json({ error: `no app_version row for ${app}` }, { status: 404 })
+  // Pull current version info from the AppVersion table, falling
+  // back to the hardcoded constants if the row hasn't been seeded on
+  // this environment yet (e.g. production DB without a UI edit).
+  const row = await prisma.appVersion.findUnique({ where: { app_key: app } }).catch(() => null)
+  const fb = FALLBACK_APP_INFO[app]
+  if (!row && !fb) {
+    return NextResponse.json({ error: `unknown app "${app}"` }, { status: 400 })
   }
+  const av = row
+    ? {
+        min_version: row.min_version,
+        latest_version: row.latest_version,
+        update_url: row.update_url,
+        changelog_ar: row.changelog_ar,
+        force: row.force,
+      }
+    : fb!
 
   // Active tenants only — skip locked/inactive ones.
   const tenants = await prisma.tenant.findMany({
