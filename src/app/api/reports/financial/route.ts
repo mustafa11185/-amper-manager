@@ -66,16 +66,46 @@ export async function GET(req: NextRequest) {
     const where: any = { tenant_id: tenantId }
     if (branchId) where.branch_id = branchId
 
-    // Invoices this month
+    // Invoices this month — used for "total_due" (theoretical ceiling)
     const invoiceAgg = await prisma.invoice.aggregate({
       where: { ...where, billing_month: month, billing_year: year },
       _sum: { total_amount_due: true, amount_paid: true },
       _count: true,
     })
     const totalDue = Number(invoiceAgg._sum.total_amount_due || 0)
-    const totalCollected = Number(invoiceAgg._sum.amount_paid || 0)
 
-    // Unpaid count
+    // "Total collected" = every dinar that actually came in during
+    // the cycle window, REGARDLESS of which invoice it paid. This
+    // matches option (أ) from the cycle discussion: late payments
+    // for prior-cycle invoices count toward THIS cycle's revenue
+    // because that's the money the owner actually received this
+    // cycle. Previously we only counted amount_paid on current-
+    // cycle invoices, which under-reported the real cash in.
+    const [cashThisCycleAgg, onlineThisCycleAgg] = await Promise.all([
+      prisma.posTransaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          ...(branchId ? { branch_id: branchId } : {}),
+          status: 'success',
+          created_at: { gte: monthStart },
+        },
+      }),
+      prisma.onlinePayment.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          status: 'success',
+          created_at: { gte: monthStart },
+        },
+      }),
+    ])
+    const totalCollected =
+      Number(cashThisCycleAgg._sum.amount || 0) +
+      Number(onlineThisCycleAgg._sum.amount || 0)
+
+    // Unpaid count — invoices of the current cycle that still
+    // have an outstanding balance.
     const unpaidCount = await prisma.invoice.count({
       where: { ...where, billing_month: month, billing_year: year, is_fully_paid: false },
     })
