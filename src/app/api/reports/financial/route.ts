@@ -189,16 +189,36 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    // Previous period (previous cycle or previous calendar month)
-    const prevAgg = await prisma.invoice.aggregate({
-      where: { ...where, billing_month: prevMonth, billing_year: prevYear },
-      _sum: { amount_paid: true, total_amount_due: true },
-    })
-    const prevCollected = Number(prevAgg._sum.amount_paid || 0)
-    const prevExpAgg = await prisma.expense.aggregate({
-      where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: prevStart, lt: prevEnd } },
-      _sum: { amount: true },
-    })
+    // Previous period — must use the same cash-in definition as
+    // the current period (POS + OnlinePayment within the window),
+    // otherwise the "هذا الشهر" number is cycle-based but the
+    // comparison number is invoice-based and the two don't align.
+    const [prevCashAgg, prevOnlineAgg, prevExpAgg] = await Promise.all([
+      prisma.posTransaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          ...(branchId ? { branch_id: branchId } : {}),
+          status: 'success',
+          created_at: { gte: prevStart, lt: prevEnd },
+        },
+      }),
+      prisma.onlinePayment.aggregate({
+        _sum: { amount: true },
+        where: {
+          tenant_id: tenantId,
+          status: 'success',
+          created_at: { gte: prevStart, lt: prevEnd },
+        },
+      }),
+      prisma.expense.aggregate({
+        _sum: { amount: true },
+        where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: prevStart, lt: prevEnd } },
+      }),
+    ])
+    const prevCollected =
+      Number(prevCashAgg._sum.amount || 0) +
+      Number(prevOnlineAgg._sum.amount || 0)
     const prevNet = prevCollected - Number(prevExpAgg._sum.amount || 0)
     const growthPercent = prevCollected > 0 ? Math.round(((totalCollected - prevCollected) / prevCollected) * 100) : 0
 
