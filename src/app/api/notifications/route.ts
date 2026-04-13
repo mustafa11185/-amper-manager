@@ -2,66 +2,32 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { buildNotificationFilter } from '@/lib/notification-filter'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const user = session.user as any
-  const tenantId = user.tenantId as string
-  const branchId = user.branchId as string | undefined
-
-  const branchFilter = user.role === 'owner'
-    ? { tenant_id: tenantId }
-    : { id: branchId }
-
-  const branches = await prisma.branch.findMany({
-    where: branchFilter,
-    select: { id: true },
-  })
-  const branchIds = branches.map(b => b.id)
-
-  const searchParams = req.nextUrl.searchParams
-  const typeFilter = searchParams.get('type')
-
-  const where: any = {
-    branch_id: { in: branchIds },
-    AND: [] as any[],
+  const filter = await buildNotificationFilter(session.user as Record<string, unknown>)
+  if (!filter || !filter.where) {
+    return NextResponse.json({ notifications: [] })
   }
 
-  // الموظف يرى فقط الإشعارات الموجهة له شخصياً
-  if (user.role !== 'owner' && user.role !== 'manager') {
-    where.AND.push({
-      OR: [
-        // إشعارات شخصية (خصم، راتب) — فقط إذا staff_id يطابق
-        {
-          type: { in: ['discount_approved', 'discount_rejected', 'salary_ready', 'task_assigned'] },
-          payload: { path: ['staff_id'], equals: user.id },
-        },
-        // إشعارات عامة للموظفين
-        { type: { in: ['announcement_to_staff', 'shift_reminder'] } },
-      ],
-    })
-  }
+  const where = { ...filter.where } as Record<string, unknown>
 
-  // المدير لا يرى إشعارات الموظفين الشخصية (الخصم الموجه لموظف معين)
-  if (user.role === 'owner' || user.role === 'manager') {
-    where.AND.push({
-      type: { notIn: ['discount_approved', 'discount_rejected'] },
-    })
-  }
-
+  // Optional UI grouping filter — temp/fuel/hardware vs everything else.
+  const typeFilter = req.nextUrl.searchParams.get('type')
   if (typeFilter && typeFilter !== 'all') {
+    const andList = (where.AND as unknown[]) || []
     if (typeFilter === 'alert') {
-      where.AND.push({ type: { in: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline'] }})
+      andList.push({ type: { in: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline'] } })
     } else if (typeFilter === 'warning') {
-      where.AND.push({ type: { in: ['temp_warning', 'fuel_warning', 'oil_change_due'] }})
+      andList.push({ type: { in: ['temp_warning', 'fuel_warning', 'oil_change_due'] } })
     } else if (typeFilter === 'info') {
-      where.AND.push({ type: { notIn: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline', 'oil_change_due'] }})
+      andList.push({ type: { notIn: ['temp_warning', 'temp_critical', 'fuel_warning', 'fuel_critical', 'device_offline', 'oil_change_due'] } })
     }
+    where.AND = andList
   }
-
-  if (where.AND.length === 0) delete where.AND
 
   const notifications = await prisma.notification.findMany({
     where,
