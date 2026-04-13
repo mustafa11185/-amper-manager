@@ -31,9 +31,9 @@ const FALLBACK_APP_INFO: Record<
 > = {
   staff: {
     min_version: '2.7.0',
-    latest_version: '2.8.0',
-    update_url: 'https://github.com/mustafa11185/amper-flutter-releases/releases/download/v2.8.0/Amper-v2.8.0.apk',
-    changelog_ar: 'واجهة المحركات الجديدة: بطاقة لكل محرك بقراءات حيّة (حرارة/حمل/ضغط) + شاشة تفاصيل 4 تبويبات (نظرة عامة/صيانة/قراءات/أحداث) + رسوم بيانية زمنية + تفضيلات التنبيهات + نظام تحديث موحّد',
+    latest_version: '2.9.0',
+    update_url: 'https://github.com/mustafa11185/amper-flutter-releases/releases/download/v2.9.0/Amper-v2.9.0.apk',
+    changelog_ar: 'واجهة المحركات + welcome wizard + Today strip + POS confirmation + offline banner + تفضيلات التنبيهات + إصلاحات الاشتراك + 8 تحسينات polish',
     force: false,
   },
   iot: {
