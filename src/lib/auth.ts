@@ -205,12 +205,14 @@ export const authOptions: NextAuthOptions = {
         token.canAddFuel = (user as any).canAddFuel
         token.isKiosk = (user as any).isKiosk
       } else if (token.tenantId) {
-        // Refresh plan + tenant name from DB at most once per minute.
+        // Refresh plan + tenant name from DB every 15 seconds.
         // Without this, the token's `plan` and `tenantName` are frozen at
         // login time — admin upgrades/renames don't propagate until full
-        // logout. Single tenant query covers both fields.
+        // logout. Single tenant query covers both fields. Shorter
+        // window = admin plan upgrade visible within seconds instead
+        // of a full minute.
         const lastRefresh = (token.planRefreshedAt as number | undefined) ?? 0
-        if (Date.now() - lastRefresh > 60_000) {
+        if (Date.now() - lastRefresh > 15_000) {
           try {
             const t = await prisma.tenant.findUnique({
               where: { id: token.tenantId as string },

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { isGoldOrHigher } from '@/lib/plan'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const plan = (session.user as any).plan
-  if (plan === 'basic') {
-    return NextResponse.json({ error: 'متاح في باقة Gold+' }, { status: 403 })
+  // Gate on "business tier or higher" — the old check for
+  // plan === 'basic' never caught the new 'pro' plan, and after
+  // the rename every pro tenant could hit this endpoint.
+  if (!isGoldOrHigher(plan)) {
+    return NextResponse.json({ error: 'متاح في باقة الأعمال أو أعلى' }, { status: 403 })
   }
 
   try {

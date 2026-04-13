@@ -12,6 +12,7 @@ import {
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import NotificationPreferencesSection from '@/components/NotificationPreferencesSection'
+import { planLabelAr, isGoldOrHigher, isFleetOrHigher, normalizePlan } from '@/lib/plan'
 
 type SettingsSection =
   | 'menu' | 'generator' | 'pricing' | 'wallets' | 'branch-info' | 'payment' | 'whatsapp'
@@ -26,9 +27,13 @@ export default function SettingsPage() {
   const isOperator = role === 'operator'
   const isAccountant = role === 'accountant'
   const canCollect = session?.user?.canCollect
-  const plan = session?.user?.plan || 'basic'
-  const isGold = plan === 'gold' || plan === 'fleet' || plan === 'custom'
-  const isFleet = plan === 'fleet' || plan === 'custom'
+  // Normalize against legacy plan names — the DB may still hold
+  // `gold`/`basic`/`trial` on old rows, while company-admin now
+  // writes `business`/`pro`/`starter`. Always compare through the
+  // helper so new plan names light up the right features.
+  const plan = normalizePlan(session?.user?.plan)
+  const isGold = isGoldOrHigher(plan)
+  const isFleet = isFleetOrHigher(plan)
 
   if (section !== 'menu') {
     return (
@@ -77,11 +82,11 @@ export default function SettingsPage() {
           </div>
           {isOwner && plan && (
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-              plan === 'gold' ? 'bg-gold-soft text-gold' :
-              plan === 'fleet' ? 'bg-violet-soft text-violet' :
+              isFleet ? 'bg-violet-soft text-violet' :
+              isGold ? 'bg-gold-soft text-gold' :
               'bg-blue-soft text-blue-primary'
             }`}>
-              {plan === 'gold' ? 'ذهبي' : plan === 'fleet' ? 'فليت' : 'أساسي'}
+              {planLabelAr(plan)}
             </span>
           )}
         </div>
@@ -1258,7 +1263,7 @@ function StaffSection({ plan }: { plan: string }) {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const isGold = plan === 'gold' || plan === 'fleet' || plan === 'custom'
+  const isGold = isGoldOrHigher(plan)
 
   function refresh() {
     fetch('/api/staff').then(r => r.json()).then(d => setStaff(d.staff || []))
@@ -1477,7 +1482,7 @@ function StaffFormModal({ mode, plan, staffId, initialData, onClose, onSuccess }
   mode: 'add' | 'edit'; plan: string; staffId?: string; initialData?: any; onClose: () => void; onSuccess: () => void
 }) {
   const isEdit = mode === 'edit'
-  const isGold = plan === 'gold' || plan === 'fleet' || plan === 'custom'
+  const isGold = isGoldOrHigher(plan)
 
   const [form, setForm] = useState(() => {
     if (isEdit && initialData) {

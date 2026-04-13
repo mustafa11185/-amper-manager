@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isGoldOrHigher } from '@/lib/plan'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  if (user.plan === 'basic') {
-    return NextResponse.json({ error: 'متاح في باقة Gold+' }, { status: 403 })
+  // Gate on business-tier+ via the shared helper so new plan
+  // names (pro/business/corporate) are recognized.
+  if (!isGoldOrHigher(user.plan)) {
+    return NextResponse.json({ error: 'متاح في باقة الأعمال أو أعلى' }, { status: 403 })
   }
 
   const branchId = req.nextUrl.searchParams.get('branch_id') || user.branchId
