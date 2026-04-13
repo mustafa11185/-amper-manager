@@ -62,9 +62,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const body = (await req.json().catch(() => ({}))) as { app?: string; force?: boolean }
+  const body = (await req.json().catch(() => ({}))) as {
+    app?: string
+    force?: boolean
+    purge_existing?: boolean
+  }
   const app = (body.app || 'staff').toLowerCase()
   const force = body.force === true
+  const purgeExisting = body.purge_existing === true
 
   // Pull current version info from the AppVersion table, falling
   // back to the hardcoded constants if the row hasn't been seeded on
@@ -83,6 +88,24 @@ export async function POST(req: NextRequest) {
         force: row.force,
       }
     : fb!
+
+  // Optional: wipe stale update_available rows so we can re-broadcast
+  // with a fresh URL. Used when a previous broadcast wrote a payload
+  // pointing at the wrong place (e.g. a typo or a private repo URL)
+  // and we need every device to see the corrected one. Only deletes
+  // rows whose payload.app matches the broadcasted app, so other
+  // notification types and other apps are untouched.
+  let purgedCount = 0
+  if (purgeExisting) {
+    const result = await prisma.notification.deleteMany({
+      where: {
+        type: 'update_available',
+        // payload->>app filter — Postgres JSON path
+        payload: { path: ['app'], equals: app },
+      },
+    })
+    purgedCount = result.count
+  }
 
   // Active tenants only — skip locked/inactive ones.
   const tenants = await prisma.tenant.findMany({
@@ -171,5 +194,6 @@ export async function POST(req: NextRequest) {
     notified,
     skipped,
     pushed,
+    purged: purgedCount,
   })
 }
