@@ -1787,3 +1787,41 @@ model AppVersion {
   updated_at     DateTime @updatedAt
   @@map("app_versions")
 }
+
+// Logged when a collector records a non-payment visit (subscriber not
+// home, locked, refused, etc.). Read by the route-history sort + future
+// "visits log" report.
+model VisitLog {
+  id            String   @id @default(uuid())
+  tenant_id     String
+  branch_id     String
+  subscriber_id String
+  staff_id      String?
+  reason        String   // "not home" / "refused" / "locked" / "other"
+  notes         String?
+  lat           Float?
+  lng           Float?
+  created_at    DateTime @default(now())
+  @@index([tenant_id, created_at])
+  @@index([subscriber_id, created_at])
+  @@map("visit_logs")
+}
+
+// Field complaint reported by a collector (meter issue, voltage drop,
+// outage on a subscriber's line, etc.). Read by manager-app's
+// complaints/issues feed (future) and surfaced as a notification.
+model SubscriberComplaint {
+  id            String   @id @default(uuid())
+  tenant_id     String
+  branch_id     String
+  subscriber_id String
+  staff_id      String?
+  type          String   // outage / weak_voltage / wrong_meter / technical / other
+  notes         String?
+  status        String   @default("open") // open | resolved | dismissed
+  created_at    DateTime @default(now())
+  resolved_at   DateTime?
+  @@index([tenant_id, status, created_at])
+  @@index([subscriber_id, created_at])
+  @@map("subscriber_complaints")
+}
