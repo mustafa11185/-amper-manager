@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { nextInvoiceNumber } from '@/lib/invoice-number'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -56,10 +57,7 @@ export async function POST(req: NextRequest) {
     const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
     const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
 
-    const numResult = await prisma.$queryRaw<Array<{ num: string }>>`
-      SELECT generate_invoice_number(${sub.tenant_id}, ${billingYear}::int) as num
-    `
-    const invoiceNumber = numResult[0]?.num ?? null
+    const invoiceNumber = await nextInvoiceNumber(prisma, sub.tenant_id, billingYear)
 
     await prisma.invoice.create({
       data: {

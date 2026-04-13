@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendPushToBranch, pushTemplates } from '@/lib/push'
+import { nextInvoiceNumber } from '@/lib/invoice-number'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -193,10 +194,7 @@ export async function POST(req: NextRequest) {
           })
           totalUpdated++
         } else {
-          const numResult = await tx.$queryRaw<Array<{ num: string }>>`
-            SELECT generate_invoice_number(${tenantId}, ${billingYear}::int) as num
-          `
-          const invoiceNumber = numResult[0]?.num ?? null
+          const invoiceNumber = await nextInvoiceNumber(tx, tenantId, billingYear)
 
           await tx.invoice.create({
             data: {
