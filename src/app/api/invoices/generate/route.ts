@@ -51,31 +51,49 @@ export async function POST(req: NextRequest) {
     const billingMonth = body.billing_month || (now.getMonth() + 1)
     const billingYear = body.billing_year || now.getFullYear()
 
+    // ─── Test-account bypass ─────────────────────────────────────────
+    // "حي الجامعة / محمد الخبل" is the owner's dedicated QA tenant.
+    // The daily generation lock is deliberately disabled here so the
+    // owner can test generating invoices for multiple billing periods
+    // on the same day without having to wait 24h between attempts or
+    // go through the reverse flow every time. All other tenants still
+    // get the normal one-per-day guard. Remove this block or change
+    // the match fields once QA is done.
+    const tenantForBypass = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true, owner_name: true },
+    })
+    const isTestAccount =
+      tenantForBypass?.name?.includes('حي الجامعة') &&
+      tenantForBypass?.owner_name?.includes('محمد')
+
     // CHECK 3: Was invoice generation already done today for this branch?
-    try {
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
-      const todayEnd = new Date()
-      todayEnd.setHours(23, 59, 59, 999)
+    if (!isTestAccount) {
+      try {
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        const todayEnd = new Date()
+        todayEnd.setHours(23, 59, 59, 999)
 
-      const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
-        where: {
-          branch_id,
-          is_reversed: false,
-          generated_at: { gte: todayStart, lte: todayEnd },
-        },
-        orderBy: { generated_at: 'desc' },
-      })
+        const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
+          where: {
+            branch_id,
+            is_reversed: false,
+            generated_at: { gte: todayStart, lte: todayEnd },
+          },
+          orderBy: { generated_at: 'desc' },
+        })
 
-      if (lastGenToday) {
-        const time = new Date(lastGenToday.generated_at).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
-        return NextResponse.json({
-          error: `تم الإصدار اليوم الساعة ${time} — يمكن الإصدار غداً`,
-          already_generated_today: true,
-        }, { status: 409 })
+        if (lastGenToday) {
+          const time = new Date(lastGenToday.generated_at).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })
+          return NextResponse.json({
+            error: `تم الإصدار اليوم الساعة ${time} — يمكن الإصدار غداً`,
+            already_generated_today: true,
+          }, { status: 409 })
+        }
+      } catch (e: any) {
+        console.log('InvoiceGenerationLog check failed (table may not exist):', e.message)
       }
-    } catch (e: any) {
-      console.log('InvoiceGenerationLog check failed (table may not exist):', e.message)
     }
 
     // Create generation log FIRST to act as a lock against concurrent generation.

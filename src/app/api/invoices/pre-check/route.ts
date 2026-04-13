@@ -38,31 +38,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ check_failed: 'no_month', error: 'يجب تحديد الشهر المستحق أولاً' })
     }
 
-    // Check if already generated today
+    // ─── Test-account bypass ─────────────────────────────────────────
+    // Mirror of the same bypass in /api/invoices/generate so the
+    // pre-check doesn't block "حي الجامعة / محمد الخبل" from testing
+    // multiple generations on the same day.
+    const tenantForBypass = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true, owner_name: true },
+    })
+    const isTestAccount =
+      tenantForBypass?.name?.includes('حي الجامعة') &&
+      tenantForBypass?.owner_name?.includes('محمد')
+
+    // Check if already generated today (skipped for test account)
     let alreadyGeneratedToday = false
     let generatedAt: Date | null = null
 
-    try {
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
-      const todayEnd = new Date()
-      todayEnd.setHours(23, 59, 59, 999)
+    if (!isTestAccount) {
+      try {
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        const todayEnd = new Date()
+        todayEnd.setHours(23, 59, 59, 999)
 
-      const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
-        where: {
-          branch_id,
-          is_reversed: false,
-          generated_at: { gte: todayStart, lte: todayEnd },
-        },
-        orderBy: { generated_at: 'desc' },
-      })
+        const lastGenToday = await prisma.invoiceGenerationLog.findFirst({
+          where: {
+            branch_id,
+            is_reversed: false,
+            generated_at: { gte: todayStart, lte: todayEnd },
+          },
+          orderBy: { generated_at: 'desc' },
+        })
 
-      alreadyGeneratedToday = !!lastGenToday
-      generatedAt = lastGenToday?.generated_at ?? null
-    } catch (e: any) {
-      // Table might not exist yet — treat as not generated
-      console.log('InvoiceGenerationLog query failed (table may not exist):', e.message)
-      alreadyGeneratedToday = false
+        alreadyGeneratedToday = !!lastGenToday
+        generatedAt = lastGenToday?.generated_at ?? null
+      } catch (e: any) {
+        // Table might not exist yet — treat as not generated
+        console.log('InvoiceGenerationLog query failed (table may not exist):', e.message)
+        alreadyGeneratedToday = false
+      }
     }
 
     if (alreadyGeneratedToday && generatedAt) {
