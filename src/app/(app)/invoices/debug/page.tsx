@@ -21,6 +21,7 @@ type Diagnostic = {
     total: number
     subscribers_with_invoice: number
     subscribers_without_invoice: number
+    missing_subscribers?: Array<{ id: string; name: string }>
     by_state: {
       fully_paid: number
       partially_paid: number
@@ -159,6 +160,40 @@ export default function InvoicesDebugPage() {
     setRunning(false)
   }
 
+  // "إصدار المتبقين فقط" — calls generate-new-only which creates
+  // invoices for every active subscriber that doesn't already have
+  // one for the current billing period. Safe to run repeatedly: it
+  // never touches existing invoices and never rolls anything to debt.
+  const runGenerateMissing = async () => {
+    if (!data) return
+    const missing = data.current_month_invoices.subscribers_without_invoice
+    if (missing === 0) {
+      setActionMessage('✅ لا يوجد مشتركون بلا فاتورة — كل شي تمام')
+      return
+    }
+    if (!confirm(`إنشاء فواتير فقط للـ ${missing} مشترك الذين بلا فاتورة؟ لن يمسّ الموجود.`)) return
+    setRunning(true)
+    setActionMessage(null)
+    try {
+      const r = await fetch('/api/invoices/generate-new-only', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch_id: data.branch.id }),
+      })
+      const j = await r.json()
+      if (!r.ok) {
+        setActionMessage('❌ فشل: ' + (j.error || r.statusText))
+      } else {
+        setActionMessage(`✅ تم إنشاء ${j.invoices_created ?? 0} فاتورة جديدة للمتبقين`)
+        setTimeout(load, 500)
+      }
+    } catch (e) {
+      setActionMessage('❌ خطأ: ' + (e as Error).message)
+    }
+    setRunning(false)
+  }
+
   if (loading)
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
@@ -222,6 +257,22 @@ export default function InvoicesDebugPage() {
         />
       </div>
 
+      {data.current_month_invoices.missing_subscribers && data.current_month_invoices.missing_subscribers.length > 0 && (
+        <div style={{ ...box, background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', marginTop: 10 }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>🚨 المشتركون بدون فاتورة للشهر الحالي:</div>
+          <div style={{ maxHeight: 180, overflowY: 'auto', fontSize: 12, lineHeight: 1.8 }}>
+            {data.current_month_invoices.missing_subscribers.map((s, i) => (
+              <div key={s.id}>
+                {i + 1}. {s.name}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: '#7f1d1d' }}>
+            اضغط زر "📋 إصدار المتبقين فقط" لإنشاء فواتيرهم بضغطة واحدة.
+          </div>
+        </div>
+      )}
+
       <h2 style={h2}>📋 تقسيم فواتير الشهر الحالي</h2>
       <div style={grid}>
         <Row label="مدفوعة كلياً ✓" value={st.fully_paid.toString()} />
@@ -276,6 +327,16 @@ export default function InvoicesDebugPage() {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
         <button onClick={runGenerate} disabled={running} style={btnPrimary}>
           📋 إصدار الفواتير الآن
+        </button>
+        <button
+          onClick={runGenerateMissing}
+          disabled={running || data.current_month_invoices.subscribers_without_invoice === 0}
+          style={{
+            ...btnPrimary,
+            background: data.current_month_invoices.subscribers_without_invoice > 0 ? '#10b981' : btnPrimary.background,
+          }}
+        >
+          📋 إصدار المتبقين فقط ({data.current_month_invoices.subscribers_without_invoice})
         </button>
         <button onClick={runReverse} disabled={running || !data.last_generation_log || data.last_generation_log.is_reversed} style={btnWarn}>
           ↩ عكس آخر إصدار

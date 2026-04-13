@@ -120,6 +120,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Names of active subscribers missing a current-month invoice —
+  // this is the fastest way for an owner to see exactly who was
+  // skipped so they can decide whether to click "إصدار المتبقين".
+  const missingSubscribers = activeSubscribers
+    .filter((s) => !subsWithCurrentInvoice.has(s.id))
+    .map((s) => ({ id: s.id, name: s.name }))
+    .slice(0, 50)
+
   // Simulate generate
   const priceNormal = pricing ? Number(pricing.price_per_amp_normal) : 0
   const priceGold = pricing ? Number(pricing.price_per_amp_gold) : 0
@@ -183,6 +191,7 @@ export async function GET(req: NextRequest) {
       total: currentMonthInvoices.length,
       subscribers_with_invoice: subsWithCurrentInvoice.size,
       subscribers_without_invoice: activeSubscribers.length - subsWithCurrentInvoice.size,
+      missing_subscribers: missingSubscribers,
       by_state: byState,
     },
     past_unpaid: {
