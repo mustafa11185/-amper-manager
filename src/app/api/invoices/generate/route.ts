@@ -3,7 +3,6 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendPushToBranch, pushTemplates } from '@/lib/push'
-import { nextInvoiceNumber } from '@/lib/invoice-number'
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -104,36 +103,31 @@ export async function POST(req: NextRequest) {
       // Non-critical: continue without the log
     }
 
-    // Get all active subscribers
+    // ═══════════════════════════════════════════════════════════════
+    //  UNIFIED GENERATION — single atomic transaction
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // This used to be two separate transactions (roll-to-debt, then
+    // create-invoices) plus a $queryRaw call into a stored function.
+    // Each of those was a failure point:
+    //
+    //   - Step 1 could succeed but Step 2 fail → debts added without
+    //     matching invoices, users see wrong state
+    //   - Stored function missing on production → $queryRaw threw,
+    //     poisoned the tx, every following query errored with
+    //     "current transaction is aborted"
+    //   - A partial failure in Step 2 left some subscribers with
+    //     new invoices and others without
+    //
+    // Now everything happens in ONE transaction. Either the entire
+    // generation commits cleanly or nothing is changed. No stored
+    // function. No raw SQL. No $queryRaw anywhere inside the tx.
+
+    // Fetch active subscribers before the transaction so we pay for
+    // this query exactly once and never block the transaction on it.
     const subscribers = await prisma.subscriber.findMany({
       where: { branch_id, is_active: true },
       select: { id: true, amperage: true, subscription_type: true, tenant_id: true, total_debt: true },
-    })
-
-    // Count unpaid invoices that will become debt.
-    //
-    // CRITICAL: only roll invoices from PAST months. Previously this
-    // query matched every unpaid invoice in the branch, which meant
-    // re-generating the current month silently rolled all of the
-    // just-created month-M invoices to debt and then Step 2 saw them
-    // as "existing + fully_paid" and skipped creating replacements.
-    // Result: after generation, nobody had a fresh invoice for the
-    // new month — every subscriber had extra debt instead.
-    const unpaidInvoices = await prisma.invoice.findMany({
-      where: {
-        branch_id,
-        is_fully_paid: false,
-        OR: [
-          { billing_year: { lt: billingYear } },
-          {
-            AND: [
-              { billing_year: billingYear },
-              { billing_month: { lt: billingMonth } },
-            ],
-          },
-        ],
-      },
-      select: { id: true, subscriber_id: true, total_amount_due: true, amount_paid: true },
     })
 
     let totalCreated = 0
@@ -141,79 +135,119 @@ export async function POST(req: NextRequest) {
     let totalSkipped = 0
     let totalDebtAdded = 0
 
-    // Step 1: Roll unpaid invoices into subscriber debt (separate transaction)
-    await prisma.$transaction(async (tx) => {
-      const debtBySubscriber = new Map<string, number>()
-      for (const inv of unpaidInvoices) {
-        const remaining = Number(inv.total_amount_due) - Number(inv.amount_paid)
-        if (remaining > 0) {
-          debtBySubscriber.set(inv.subscriber_id, (debtBySubscriber.get(inv.subscriber_id) || 0) + remaining)
-        }
-      }
+    // Pre-compute the starting invoice-number sequence OUTSIDE the
+    // transaction so we never call count() with a poisoned tx later.
+    // The tx will never clobber its own numbering because we
+    // increment a local counter after each insert.
+    const existingYearCount = await prisma.invoice.count({
+      where: { tenant_id: tenantId, billing_year: billingYear },
+    })
+    let invoiceSeq = existingYearCount
 
-      for (const [subId, debtAmount] of debtBySubscriber) {
-        await tx.subscriber.update({
-          where: { id: subId },
-          data: { total_debt: { increment: debtAmount } },
-        })
-        totalDebtAdded++
-      }
-
-      if (unpaidInvoices.length > 0) {
-        await tx.invoice.updateMany({
-          where: { id: { in: unpaidInvoices.map(i => i.id) } },
-          data: { is_fully_paid: true, payment_method: 'rolled_to_debt' },
-        })
-      }
-    }, { maxWait: 10000, timeout: 30000 })
-
-    // Step 2: Create or update invoices (separate transaction, longer timeout)
-    await prisma.$transaction(async (tx) => {
-      for (const sub of subscribers) {
-        const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
-        const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
-
-        const existing = await tx.invoice.findUnique({
+    await prisma.$transaction(
+      async (tx) => {
+        // ── 1) Roll PAST-MONTH unpaid invoices into subscriber debt ──
+        //
+        // Only touch invoices strictly before the billing period being
+        // generated. The previous bug was this query having no month
+        // filter, which rolled the just-created month-M invoices into
+        // debt on regeneration.
+        const unpaidInvoices = await tx.invoice.findMany({
           where: {
-            subscriber_id_billing_month_billing_year: {
-              subscriber_id: sub.id,
-              billing_month: billingMonth,
-              billing_year: billingYear,
-            },
+            branch_id,
+            is_fully_paid: false,
+            OR: [
+              { billing_year: { lt: billingYear } },
+              {
+                AND: [
+                  { billing_year: billingYear },
+                  { billing_month: { lt: billingMonth } },
+                ],
+              },
+            ],
           },
+          select: { id: true, subscriber_id: true, total_amount_due: true, amount_paid: true },
         })
 
-        if (existing) {
-          if (Number(existing.amount_paid) > 0 || existing.is_fully_paid) {
-            totalSkipped++
-            continue
+        const debtBySubscriber = new Map<string, number>()
+        for (const inv of unpaidInvoices) {
+          const remaining = Number(inv.total_amount_due) - Number(inv.amount_paid)
+          if (remaining > 0) {
+            debtBySubscriber.set(
+              inv.subscriber_id,
+              (debtBySubscriber.get(inv.subscriber_id) || 0) + remaining,
+            )
           }
-          await tx.invoice.update({
-            where: { id: existing.id },
-            data: { base_amount: totalDue, total_amount_due: totalDue },
-          })
-          totalUpdated++
-        } else {
-          const invoiceNumber = await nextInvoiceNumber(tx, tenantId, billingYear)
+        }
 
-          await tx.invoice.create({
-            data: {
-              subscriber_id: sub.id,
-              branch_id,
-              tenant_id: tenantId,
-              billing_month: billingMonth,
-              billing_year: billingYear,
-              base_amount: totalDue,
-              total_amount_due: totalDue,
-              amount_paid: 0,
-              is_fully_paid: false,
-              invoice_number: invoiceNumber,
+        for (const [subId, debtAmount] of debtBySubscriber) {
+          await tx.subscriber.update({
+            where: { id: subId },
+            data: { total_debt: { increment: debtAmount } },
+          })
+          totalDebtAdded++
+        }
+
+        if (unpaidInvoices.length > 0) {
+          await tx.invoice.updateMany({
+            where: { id: { in: unpaidInvoices.map((i) => i.id) } },
+            data: { is_fully_paid: true, payment_method: 'rolled_to_debt' },
+          })
+        }
+
+        // ── 2) Create or update the current-month invoice for each
+        //        active subscriber ──
+        for (const sub of subscribers) {
+          const pricePerAmp = sub.subscription_type === 'gold' ? priceGold : priceNormal
+          const totalDue = Math.round(Number(sub.amperage) * pricePerAmp)
+
+          const existing = await tx.invoice.findUnique({
+            where: {
+              subscriber_id_billing_month_billing_year: {
+                subscriber_id: sub.id,
+                billing_month: billingMonth,
+                billing_year: billingYear,
+              },
             },
           })
-          totalCreated++
+
+          if (existing) {
+            if (Number(existing.amount_paid) > 0 || existing.is_fully_paid) {
+              totalSkipped++
+              continue
+            }
+            await tx.invoice.update({
+              where: { id: existing.id },
+              data: { base_amount: totalDue, total_amount_due: totalDue },
+            })
+            totalUpdated++
+          } else {
+            invoiceSeq++
+            const invoiceNumber = `INV-${billingYear}-${invoiceSeq.toString().padStart(6, '0')}`
+
+            await tx.invoice.create({
+              data: {
+                subscriber_id: sub.id,
+                branch_id,
+                tenant_id: tenantId,
+                billing_month: billingMonth,
+                billing_year: billingYear,
+                base_amount: totalDue,
+                total_amount_due: totalDue,
+                amount_paid: 0,
+                is_fully_paid: false,
+                invoice_number: invoiceNumber,
+              },
+            })
+            totalCreated++
+          }
         }
-      }
-    }, { maxWait: 10000, timeout: 60000 })
+      },
+      // Larger timeout because rollover + creation now share one tx.
+      // Typical branches with <500 subscribers finish in <10s.
+      { maxWait: 15000, timeout: 120000 },
+    )
+
 
     // Update generation log with final counts (non-critical)
     try {
