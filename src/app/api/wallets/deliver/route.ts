@@ -39,8 +39,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'الرصيد غير كافٍ' }, { status: 400 })
     }
 
-    const salaryDeduct = deduct_salary && salary_amount > 0 ? Math.min(Number(salary_amount), deliverAmount) : 0
-    const netToManager = deliverAmount - salaryDeduct
+    // Salary can exceed the wallet's available amount — the manager is
+    // free to top up from their own pocket. Split it:
+    //   walletSalaryPart  = the slice of salary that comes out of the wallet
+    //   pocketSalaryPart  = the slice the manager pays from their own money
+    //   netToManager      = what the manager actually keeps from this delivery
+    const totalSalary = deduct_salary && salary_amount > 0 ? Number(salary_amount) : 0
+    const walletSalaryPart = Math.min(totalSalary, deliverAmount)
+    const pocketSalaryPart = Math.max(0, totalSalary - deliverAmount)
+    const netToManager = deliverAmount - walletSalaryPart
 
     // Transaction: update wallet + create delivery record + optional salary payment
     const [updatedWallet, delivery] = await prisma.$transaction([
@@ -69,10 +76,16 @@ export async function POST(req: NextRequest) {
       }),
     ])
 
-    // Create salary payment record if salary was deducted
-    if (salaryDeduct > 0) {
+    // Create a single salary-payment record for the FULL amount paid to
+    // the staff (wallet portion + manager's out-of-pocket top-up). The
+    // `paid_from_delivery` flag still applies because the payment event
+    // is anchored to this delivery.
+    if (totalSalary > 0) {
       try {
         const now = new Date()
+        const noteParts: string[] = []
+        if (walletSalaryPart > 0) noteParts.push(`من المحفظة: ${walletSalaryPart.toLocaleString()} د.ع`)
+        if (pocketSalaryPart > 0) noteParts.push(`من المدير: ${pocketSalaryPart.toLocaleString()} د.ع`)
         await prisma.salaryPayment.create({
           data: {
             staff_id,
@@ -80,11 +93,11 @@ export async function POST(req: NextRequest) {
             branch_id: wallet.branch_id,
             month: now.getMonth() + 1,
             year: now.getFullYear(),
-            amount: salaryDeduct,
+            amount: totalSalary,
             payment_type: 'salary',
             paid_from_delivery: true,
             delivery_id: delivery.id,
-            notes: 'خصم من استلام محفظة',
+            notes: noteParts.join(' · '),
           },
         })
       } catch (salaryErr: any) {
@@ -103,7 +116,7 @@ export async function POST(req: NextRequest) {
           type: 'wallet_delivery',
           title: 'استلام من محفظة 💰',
           body: `تم استلام ${deliverAmount.toLocaleString()} د.ع من محفظة ${staffName}`,
-          payload: { staff_id, staff_name: staffName, amount: deliverAmount, salary_deducted: salaryDeduct },
+          payload: { staff_id, staff_name: staffName, amount: deliverAmount, salary_deducted: totalSalary },
         },
       })
       const push = pushTemplates.walletReceived(deliverAmount)
@@ -114,7 +127,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       new_balance: Number(updatedWallet.balance),
       delivered: deliverAmount,
-      salary_deducted: salaryDeduct,
+      salary_total: totalSalary,
+      salary_from_wallet: walletSalaryPart,
+      salary_from_pocket: pocketSalaryPart,
       net_to_manager: netToManager,
     })
   } catch (e: any) {
