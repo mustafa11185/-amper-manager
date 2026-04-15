@@ -24,38 +24,52 @@ export async function GET() {
   const branchId = user.branchId as string | undefined
   if (!branchId) return NextResponse.json({ error: 'No branch assigned' }, { status: 400 })
 
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1)
-  const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+  // Baghdad day window (UTC+3, no DST)
+  const IRAQ_OFFSET_MS = 3 * 60 * 60 * 1000
+  const nowIraq = new Date(Date.now() + IRAQ_OFFSET_MS)
+  const todayStart = new Date(
+    Date.UTC(nowIraq.getUTCFullYear(), nowIraq.getUTCMonth(), nowIraq.getUTCDate()) - IRAQ_OFFSET_MS,
+  )
+  const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
   // Current cycle — replaces the old calendar monthStart.
   const cycle = await getCurrentCycleWindow(branchId)
   const cycleStart = cycle.start
 
   // ─── 1. Today's collection (split by payment method) ───────
+  // Source of truth is Invoice.collector_id / amount_paid, not PosTransaction
+  // (the POS table is legacy and not populated by the staff_flutter payment flow).
   let collection: any = { total_today: 0, total_yesterday: 0, by_method: {}, count_today: 0 }
   try {
-    const [todayTxs, yesterdayTxs] = await Promise.all([
-      prisma.posTransaction.findMany({
-        where: { staff_id: staffId, status: 'success', created_at: { gte: todayStart, lt: tomorrowStart } },
-        select: { amount: true, payment_method: true },
+    const [todayInvs, yesterdayAgg] = await Promise.all([
+      prisma.invoice.findMany({
+        where: {
+          collector_id: staffId,
+          amount_paid: { gt: 0 },
+          updated_at: { gte: todayStart, lt: tomorrowStart },
+        },
+        select: { amount_paid: true, payment_method: true },
       }),
-      prisma.posTransaction.aggregate({
-        _sum: { amount: true },
-        where: { staff_id: staffId, status: 'success', created_at: { gte: yesterdayStart, lt: todayStart } },
+      prisma.invoice.aggregate({
+        _sum: { amount_paid: true },
+        where: {
+          collector_id: staffId,
+          amount_paid: { gt: 0 },
+          updated_at: { gte: yesterdayStart, lt: todayStart },
+        },
       }),
     ])
 
     const byMethod: Record<string, number> = {}
-    for (const t of todayTxs) {
-      const m = (t.payment_method || 'cash').toLowerCase()
-      byMethod[m] = (byMethod[m] || 0) + Number(t.amount)
+    for (const inv of todayInvs) {
+      const m = (inv.payment_method || 'cash').toLowerCase()
+      byMethod[m] = (byMethod[m] || 0) + Number(inv.amount_paid)
     }
     collection = {
-      total_today: todayTxs.reduce((s, t) => s + Number(t.amount), 0),
-      total_yesterday: Number(yesterdayTxs._sum.amount ?? 0),
+      total_today: todayInvs.reduce((s, i) => s + Number(i.amount_paid), 0),
+      total_yesterday: Number(yesterdayAgg._sum.amount_paid ?? 0),
       by_method: byMethod,
-      count_today: todayTxs.length,
+      count_today: todayInvs.length,
     }
   } catch (err: any) {
     console.warn('[staff-widgets/collection]', err.message)
@@ -75,11 +89,11 @@ export async function GET() {
           is_fully_paid: false,
         },
       }),
-      prisma.posTransaction.count({
+      prisma.invoice.count({
         where: {
           branch_id: branchId,
-          status: 'success',
-          created_at: { gte: todayStart, lt: tomorrowStart },
+          amount_paid: { gt: 0 },
+          updated_at: { gte: todayStart, lt: tomorrowStart },
         },
       }),
     ])
@@ -123,17 +137,18 @@ export async function GET() {
   // ─── 4. Leaderboard rank this month ────────────────────────
   let leaderboard: any = { rank: 0, total_collectors: 0, my_collected: 0 }
   try {
-    const grouped = await prisma.posTransaction.groupBy({
-      by: ['staff_id'],
-      _sum: { amount: true },
+    const grouped = await prisma.invoice.groupBy({
+      by: ['collector_id'],
+      _sum: { amount_paid: true },
       where: {
         tenant_id: tenantId,
-        status: 'success',
-        created_at: { gte: cycleStart },
+        amount_paid: { gt: 0 },
+        collector_id: { not: null },
+        updated_at: { gte: cycleStart },
       },
     })
     const ranked = grouped
-      .map(g => ({ staff_id: g.staff_id, total: Number(g._sum.amount ?? 0) }))
+      .map(g => ({ staff_id: g.collector_id!, total: Number(g._sum.amount_paid ?? 0) }))
       .sort((a, b) => b.total - a.total)
     const myIdx = ranked.findIndex(r => r.staff_id === staffId)
     leaderboard = {

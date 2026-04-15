@@ -3,52 +3,74 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+/** Baghdad day window (UTC+3, no DST). */
+function getIraqDayWindow() {
+  const IRAQ_OFFSET_MS = 3 * 60 * 60 * 1000;
+  const nowIraq = new Date(Date.now() + IRAQ_OFFSET_MS);
+  const dayStart = new Date(
+    Date.UTC(nowIraq.getUTCFullYear(), nowIraq.getUTCMonth(), nowIraq.getUTCDate()) -
+      IRAQ_OFFSET_MS,
+  );
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { dayStart, dayEnd };
+}
+
+/** Baghdad month window — start of the current calendar month in Iraq time. */
+function getIraqMonthStart() {
+  const IRAQ_OFFSET_MS = 3 * 60 * 60 * 1000;
+  const nowIraq = new Date(Date.now() + IRAQ_OFFSET_MS);
+  return new Date(
+    Date.UTC(nowIraq.getUTCFullYear(), nowIraq.getUTCMonth(), 1) - IRAQ_OFFSET_MS,
+  );
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const user = session.user as any;
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
+    const { dayStart, dayEnd } = getIraqDayWindow();
+    const monthStart = getIraqMonthStart();
 
-    // Today's transactions
-    const todayTx = await prisma.posTransaction.findMany({
+    // Today's collections — read from Invoice where this collector received payment.
+    // (PosTransaction is a legacy table that the staff_flutter payment flow
+    // doesn't populate; only Invoice.collector_id is stamped.)
+    const todayInvoices = await prisma.invoice.findMany({
       where: {
-        staff_id: user.id,
-        created_at: { gte: todayStart },
-        status: "success",
+        collector_id: user.id,
+        updated_at: { gte: dayStart, lte: dayEnd },
+        amount_paid: { gt: 0 },
       },
       include: { subscriber: { select: { name: true } } },
-      orderBy: { created_at: "desc" },
+      orderBy: { updated_at: "desc" },
     });
 
-    const todayCash = todayTx
-      .filter((t) => t.payment_method === "cash")
-      .reduce((acc, t) => acc + Number(t.amount), 0);
+    const todayTotal = todayInvoices.reduce((acc, i) => acc + Number(i.amount_paid), 0);
+    const todayCash = todayInvoices
+      .filter((i) => (i.payment_method ?? "cash").toLowerCase() === "cash")
+      .reduce((acc, i) => acc + Number(i.amount_paid), 0);
 
-    // Wallet
+    // Wallet (unchanged — reads from CollectorWallet summary table)
     const wallet = await prisma.collectorWallet.findUnique({
       where: { staff_id: user.id },
     });
 
-    // Month transactions
-    const monthTx = await prisma.posTransaction.findMany({
+    // Month collections
+    const monthInvoices = await prisma.invoice.findMany({
       where: {
-        staff_id: user.id,
-        created_at: { gte: monthStart },
-        status: "success",
+        collector_id: user.id,
+        updated_at: { gte: monthStart },
+        amount_paid: { gt: 0 },
       },
+      select: { amount_paid: true },
     });
-    const monthCollected = monthTx.reduce((acc, t) => acc + Number(t.amount), 0);
+    const monthCollected = monthInvoices.reduce((acc, i) => acc + Number(i.amount_paid), 0);
 
-    // Visited today (unique subscribers)
-    const visitedToday = new Set(todayTx.map((t) => t.subscriber_id)).size;
+    // Unique subscribers visited today
+    const visitedToday = new Set(todayInvoices.map((i) => i.subscriber_id)).size;
 
-    // Expenses this month
+    // Expenses this month (unchanged)
     const expenses = await prisma.expense.findMany({
       where: {
         staff_id: user.id,
@@ -57,11 +79,10 @@ export async function GET() {
       orderBy: { created_at: "desc" },
     });
 
-    // Recent payments
-    const recentPayments = todayTx.slice(0, 5).map((t) => ({
-      subscriber_name: (t as any).subscriber?.name ?? "—",
-      amount: Number(t.amount),
-      created_at: t.created_at.toISOString(),
+    const recentPayments = todayInvoices.slice(0, 5).map((i) => ({
+      subscriber_name: (i as any).subscriber?.name ?? "—",
+      amount: Number(i.amount_paid),
+      created_at: i.updated_at.toISOString(),
     }));
 
     // Attendance summary this month
@@ -77,8 +98,8 @@ export async function GET() {
 
     return NextResponse.json({
       today_cash: todayCash,
-      today_total: todayCash,
-      today_count: todayTx.length,
+      today_total: todayTotal,
+      today_count: todayInvoices.length,
       month_collected: monthCollected,
       month_delivered: wallet ? Number(wallet.total_delivered) : 0,
       wallet_balance: wallet ? Number(wallet.balance) : 0,
