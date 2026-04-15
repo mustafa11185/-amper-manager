@@ -1835,13 +1835,27 @@ model Announcement {
   tenant_id      String
   type           String   @default("general")
   message        String
-  target         String   @default("all") // all | collectors | operators | accountants
+  target         String   @default("all") // all | gold | normal | collectors | operators | accountants | specific
   is_urgent      Boolean  @default(false)
   auto_generated Boolean  @default(false)
+  // When set, this announcement is a direct message to a single
+  // subscriber (target will be 'specific'). Null for broadcasts.
+  subscriber_id  String?
   created_by     String?
   created_at     DateTime @default(now())
   @@index([tenant_id, created_at])
+  @@index([subscriber_id])
   @@map("announcements")
+}
+
+// Tracks which subscribers have read which announcements, so the
+// subscriber app's bell can show an accurate unread count.
+model SubscriberAnnouncementRead {
+  subscriber_id   String
+  announcement_id String
+  read_at         DateTime @default(now())
+  @@id([subscriber_id, announcement_id])
+  @@map("subscriber_reads")
 }
 
 // Per-tenant plan overrides — limits + feature flags that override
