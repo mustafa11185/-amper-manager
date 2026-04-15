@@ -3,6 +3,23 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+/** Iraq is UTC+3 with no DST → day window centred on Baghdad midnight. */
+function getIraqDayWindow(dateParam: string | null) {
+  const IRAQ_OFFSET_MS = 3 * 60 * 60 * 1000
+  let baseIraq: Date
+  if (dateParam && dateParam !== 'today') {
+    baseIraq = new Date(dateParam)
+  } else {
+    baseIraq = new Date(Date.now() + IRAQ_OFFSET_MS)
+  }
+  const dayStart = new Date(
+    Date.UTC(baseIraq.getUTCFullYear(), baseIraq.getUTCMonth(), baseIraq.getUTCDate()) -
+      IRAQ_OFFSET_MS,
+  )
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
+  return { dayStart, dayEnd }
+}
+
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -10,34 +27,19 @@ export async function GET(req: NextRequest) {
   const staffId = req.nextUrl.searchParams.get('staff_id')
   if (!staffId) return NextResponse.json({ error: 'staff_id required' }, { status: 400 })
 
-  const dateParam = req.nextUrl.searchParams.get('date')
-  const now = new Date()
-  let dayStart: Date
-  let dayEnd: Date
-
-  if (dateParam && dateParam !== 'today') {
-    dayStart = new Date(dateParam)
-    dayStart.setHours(0, 0, 0, 0)
-    dayEnd = new Date(dateParam)
-    dayEnd.setHours(23, 59, 59, 999)
-  } else {
-    dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-  }
+  const { dayStart, dayEnd } = getIraqDayWindow(req.nextUrl.searchParams.get('date'))
 
   try {
-    // Get current location (latest log)
+    // Latest known position (for the "current" marker)
     const latest = await prisma.staffGpsLog.findFirst({
       where: { staff_id: staffId },
       orderBy: { recorded_at: 'desc' },
     })
 
-    // Get stops (4+ minutes) for this day
-    const stops = await prisma.staffGpsLog.findMany({
+    // ALL GPS points for today — used by Flutter to draw the polyline trail
+    const allPoints = await prisma.staffGpsLog.findMany({
       where: {
         staff_id: staffId,
-        is_stop: true,
-        stop_duration_min: { gte: 4 },
         recorded_at: { gte: dayStart, lte: dayEnd },
       },
       orderBy: { recorded_at: 'asc' },
@@ -45,11 +47,14 @@ export async function GET(req: NextRequest) {
         lat: true,
         lng: true,
         recorded_at: true,
+        is_stop: true,
         stop_duration_min: true,
       },
     })
 
-    // Deduplicate stops that are within 50m of each other (keep the one with longest duration)
+    const stops = allPoints.filter(p => p.is_stop && (p.stop_duration_min ?? 0) >= 4)
+
+    // Deduplicate stops within 50m (keep the longest-duration one)
     const deduped: typeof stops = []
     for (const s of stops) {
       const existing = deduped.find(d => {
@@ -57,7 +62,9 @@ export async function GET(req: NextRequest) {
         const toRad = (deg: number) => (deg * Math.PI) / 180
         const dLat = toRad(Number(s.lat) - Number(d.lat))
         const dLng = toRad(Number(s.lng) - Number(d.lng))
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(Number(d.lat))) * Math.cos(toRad(Number(s.lat))) * Math.sin(dLng / 2) ** 2
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(toRad(Number(d.lat))) * Math.cos(toRad(Number(s.lat))) * Math.sin(dLng / 2) ** 2
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) < 50
       })
       if (existing) {
@@ -71,11 +78,19 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      current_location: latest ? {
-        lat: Number(latest.lat),
-        lng: Number(latest.lng),
-        last_seen: latest.recorded_at.toISOString(),
-      } : null,
+      current_location: latest
+        ? {
+            lat: Number(latest.lat),
+            lng: Number(latest.lng),
+            last_seen: latest.recorded_at.toISOString(),
+          }
+        : null,
+      trail: allPoints.map(p => ({
+        lat: Number(p.lat),
+        lng: Number(p.lng),
+        recorded_at: p.recorded_at.toISOString(),
+        is_stop: p.is_stop,
+      })),
       stops: deduped.map(s => ({
         lat: Number(s.lat),
         lng: Number(s.lng),

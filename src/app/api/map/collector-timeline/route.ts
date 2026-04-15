@@ -3,6 +3,18 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+/** Iraq is UTC+3 with no DST → day window centred on Baghdad midnight. */
+function getIraqDayWindow() {
+  const IRAQ_OFFSET_MS = 3 * 60 * 60 * 1000
+  const nowIraq = new Date(Date.now() + IRAQ_OFFSET_MS)
+  const dayStart = new Date(
+    Date.UTC(nowIraq.getUTCFullYear(), nowIraq.getUTCMonth(), nowIraq.getUTCDate()) -
+      IRAQ_OFFSET_MS,
+  )
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
+  return { dayStart, dayEnd }
+}
+
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -10,12 +22,10 @@ export async function GET(req: NextRequest) {
   const staffId = req.nextUrl.searchParams.get('staff_id')
   if (!staffId) return NextResponse.json({ error: 'staff_id required' }, { status: 400 })
 
-  const now = new Date()
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+  const { dayStart, dayEnd } = getIraqDayWindow()
 
   try {
-    // Get GPS logs (all events) for today
+    // GPS logs for today
     const logs = await prisma.staffGpsLog.findMany({
       where: {
         staff_id: staffId,
@@ -29,19 +39,25 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    // Get today's payments by this collector
-    const payments = await prisma.posTransaction.findMany({
+    // Today's collections — read from Invoice where this collector received payment.
+    // (PosTransaction is a legacy/POS-device table and isn't populated by the
+    // staff_flutter payment flow, which only stamps Invoice.collector_id.)
+    const invoices = await prisma.invoice.findMany({
       where: {
-        staff_id: staffId,
-        created_at: { gte: dayStart, lte: dayEnd },
+        collector_id: staffId,
+        updated_at: { gte: dayStart, lte: dayEnd },
+        amount_paid: { gt: 0 },
       },
-      orderBy: { created_at: 'asc' },
-      include: {
+      orderBy: { updated_at: 'asc' },
+      select: {
+        id: true,
+        amount_paid: true,
+        updated_at: true,
         subscriber: { select: { name: true } },
       },
     })
 
-    // Get shift
+    // Shift
     const shift = await prisma.collectorShift.findFirst({
       where: {
         staff_id: staffId,
@@ -61,12 +77,12 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    for (const p of payments) {
+    for (const inv of invoices) {
       timeline.push({
-        time: p.created_at.toISOString(),
+        time: inv.updated_at.toISOString(),
         event_type: 'payment',
-        label: `دفعة — ${p.subscriber?.name ?? '—'}`,
-        amount: Number(p.amount),
+        label: `دفعة — ${inv.subscriber?.name ?? '—'}`,
+        amount: Number(inv.amount_paid),
       })
     }
 
@@ -91,17 +107,15 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Sort by time
     timeline.sort((a: any, b: any) => new Date(a.time).getTime() - new Date(b.time).getTime())
 
-    // Stats
-    const totalCollected = payments.reduce((s: number, p: any) => s + Number(p.amount), 0)
+    const totalCollected = invoices.reduce((s: number, i: any) => s + Number(i.amount_paid), 0)
 
     return NextResponse.json({
       timeline,
       stats: {
         total_collected: totalCollected,
-        payment_count: payments.length,
+        payment_count: invoices.length,
         stop_count: logs.filter(l => l.is_stop).length,
       },
     })
