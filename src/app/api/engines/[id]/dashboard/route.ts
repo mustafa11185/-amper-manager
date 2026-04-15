@@ -70,13 +70,50 @@ export async function GET(
   const filterSince = Math.max(0, runtime - hoursAtFilter)
   const serviceSince = Math.max(0, runtime - hoursAtService)
 
-  const oilPct = Math.min(100, (oilSince / engine.oil_change_hours) * 100)
+  const oilPctHours = Math.min(100, (oilSince / engine.oil_change_hours) * 100)
   const filterPct = Math.min(100, (filterSince / engine.air_filter_hours) * 100)
   const servicePct = Math.min(100, (serviceSince / engine.full_service_hours) * 100)
 
+  // ── Days-based oil tracking ─────────────────────────────────
+  // Engines also get an oil change on a fixed calendar cadence
+  // (every 20 days in normal weather, 15 in summer, 25 in winter)
+  // regardless of runtime hours. Same model the staff dashboard
+  // uses — we compute it here so both screens agree.
+  const month = new Date().getMonth() + 1
+  const isSummer = month >= 6 && month <= 9
+  const isWinter = month === 12 || month <= 2
+  const seasonalOilDays = isSummer
+    ? (engine.oil_summer_days ?? 15)
+    : isWinter
+      ? (engine.oil_winter_days ?? 25)
+      : (engine.oil_normal_days ?? 20)
+  const lastOilAt = engine.last_oil_change_at as Date | null
+  let oilDaysSince: number | null = null
+  let oilDaysRemaining: number | null = null
+  let oilPctDays = 0
+  if (lastOilAt) {
+    oilDaysSince = Math.max(0, Math.floor((Date.now() - lastOilAt.getTime()) / (1000 * 60 * 60 * 24)))
+    oilDaysRemaining = seasonalOilDays - oilDaysSince
+    oilPctDays = Math.min(100, (oilDaysSince / seasonalOilDays) * 100)
+  }
+
+  // Winning oil model = whichever is more due (higher %). If the
+  // engine barely ran but the calendar says it's time, days win.
+  // If the engine ran long but the calendar says it's still early,
+  // hours win. Whichever breaches first should raise the flag.
+  const oilPct = Math.max(oilPctHours, oilPctDays)
+  const oilUsesDays = oilPctDays >= oilPctHours && oilDaysSince != null
+
   // "Next action" — whichever is closest to due (highest percent).
   const nextAction = [
-    { type: 'oil_change', label: 'تغيير الزيت', pct: oilPct, hours_left: engine.oil_change_hours - oilSince },
+    {
+      type: 'oil_change',
+      label: 'تغيير الزيت',
+      pct: oilPct,
+      hours_left: engine.oil_change_hours - oilSince,
+      days_left: oilDaysRemaining,
+      uses_days: oilUsesDays,
+    },
     { type: 'air_filter', label: 'فلتر الهواء', pct: filterPct, hours_left: engine.air_filter_hours - filterSince },
     { type: 'full_service', label: 'صيانة شاملة', pct: servicePct, hours_left: engine.full_service_hours - serviceSince },
   ].sort((a, b) => b.pct - a.pct)[0]
@@ -113,6 +150,10 @@ export async function GET(
         hours_limit: engine.oil_change_hours,
         percent: Math.round(oilPct),
         last_at: engine.last_oil_change_at,
+        days_since: oilDaysSince,
+        days_remaining: oilDaysRemaining,
+        interval_days: seasonalOilDays,
+        uses_days_model: oilUsesDays,
       },
       air_filter: {
         hours_since: filterSince,
