@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   if (oil_pressure_bar !== undefined && engine) {
     try {
       await prisma.oilPressureLog.create({
-        data: { engine_id: engine.id, pressure_bar: oil_pressure_bar },
+        data: { engine_id: engine.id, branch_id: branch.id, pressure_bar: oil_pressure_bar, source: isModbus ? 'modbus' : 'iot' },
       });
     } catch (_) {}
   }
@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
       await prisma.loadLog.create({
         data: {
           engine_id: engine.id,
+          branch_id: branch.id,
           load_ampere: totalCurrent,
           gold_current_a: isModbus ? current_l1 : gold_current_a,
           normal_current_a: isModbus ? current_l2 : normal_current_a,
