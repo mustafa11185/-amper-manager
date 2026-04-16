@@ -46,7 +46,7 @@ export async function GET(
 
   // Latest sensor readings — each is a separate query since they live in
   // different tables without a direct Engine relation.
-  const [latestTemp, latestPressure, latestLoad] = await Promise.all([
+  const [latestTemp, latestPressure, latestLoad, latestTelemetry] = await Promise.all([
     prisma.temperatureLog.findFirst({
       where: { engine_id: id },
       orderBy: { logged_at: 'desc' },
@@ -58,6 +58,11 @@ export async function GET(
     prisma.loadLog.findFirst({
       where: { engine_id: id },
       orderBy: { logged_at: 'desc' },
+    }),
+    // Latest full telemetry snapshot (Modbus or ESP32)
+    prisma.iotTelemetry.findFirst({
+      where: { engine_id: id },
+      orderBy: { recorded_at: 'desc' },
     }),
   ])
 
@@ -144,6 +149,22 @@ export async function GET(
       normal_current_a: latestLoad?.normal_current_a != null ? Number(latestLoad.normal_current_a) : null,
       load_at: latestLoad?.logged_at ?? null,
     },
+    // Modbus-enriched snapshot (null when source=esp32_sensors)
+    modbus: latestTelemetry?.source?.startsWith('modbus') ? {
+      source: latestTelemetry.source,
+      voltage_l1: latestTelemetry.voltage_l1,
+      voltage_l2: latestTelemetry.voltage_l2,
+      voltage_l3: latestTelemetry.voltage_l3,
+      current_l1: latestTelemetry.current_l1,
+      current_l2: latestTelemetry.current_l2,
+      current_l3: latestTelemetry.current_l3,
+      frequency_hz: latestTelemetry.frequency_hz,
+      rpm: latestTelemetry.rpm,
+      battery_v: latestTelemetry.battery_v,
+      run_hours: latestTelemetry.run_hours,
+      power_kw: latestTelemetry.power_kw,
+      recorded_at: latestTelemetry.recorded_at,
+    } : null,
     maintenance: {
       oil: {
         hours_since: oilSince,
