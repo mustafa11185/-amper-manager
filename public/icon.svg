@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  AMPER · Voltage Hex Mark · Blue Variant (Staff)
-  1024×1024 · dark background · iOS/Android app icon source
+  AMPER · Voltage Hex Mark · Blue · v2
+  1024×1024 · dark bg · iOS/Android app icon source
+  Inner viewBox crops to hex bounds; outer padding ~8% each side
+  so Android adaptive masking + iOS corner radius still show full mark.
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 1024 1024" width="1024" height="1024">
   <rect width="1024" height="1024" fill="#060D1A"/>
-  <g transform="translate(192,192) scale(6.4)">
+  <svg x="82" y="62" width="860" height="900" viewBox="20 14 80 92"
+       preserveAspectRatio="xMidYMid meet">
     <polygon points="60,14 100,37 100,83 60,106 20,83 20,37"
              fill="none" stroke="#1B4FD8" stroke-width="5"
              stroke-linejoin="miter"/>
     <path d="M66,24 L50,60 L62,60 L46,96 L76,56 L62,56 Z"
           fill="#2D8CFF"/>
-  </g>
+  </svg>
 </svg>

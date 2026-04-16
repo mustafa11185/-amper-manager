@@ -734,6 +734,7 @@ model IotTelemetry {
   id            String    @id @default(uuid())
   device_id     String
   engine_id     String?
+  // Legacy sensor fields (ESP32 + discrete sensors)
   temperature_c Float?
   fuel_pct      Float?
   current_a     Float?
@@ -741,6 +742,21 @@ model IotTelemetry {
   oil_status    String?
   oil_pressure_bar Float?
   run_status    Boolean?
+  // Modbus-enriched fields (DSE 5110 / ComAp / similar controllers)
+  voltage_l1    Float?
+  voltage_l2    Float?
+  voltage_l3    Float?
+  current_l1    Float?
+  current_l2    Float?
+  current_l3    Float?
+  frequency_hz  Float?
+  rpm           Int?
+  battery_v     Float?
+  run_hours     Float?
+  power_kw      Float?
+  // Source identifier so the dashboard can adapt its layout
+  // Values: 'esp32_sensors' | 'modbus_dse5110' | 'modbus_comap' | 'manual'
+  source        String?
   recorded_at   DateTime  @default(now())
   device        IotDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
   @@index([device_id, recorded_at])
