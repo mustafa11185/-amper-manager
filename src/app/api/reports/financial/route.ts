@@ -175,12 +175,26 @@ export async function GET(req: NextRequest) {
     const salaries = Number(salaryAgg._sum.amount || 0)
     const tips = Number(tipAgg._sum.amount || 0)
 
-    // Other expenses
+    // Other expenses — use CALENDAR month (not cycle window) because
+    // expenses are real cash outflows on fixed dates, not tied to when
+    // invoices were generated. Without this, expenses created before
+    // the cycle start (e.g. fuel bought on the 5th, cycle starts 10th)
+    // would silently disappear from the report.
+    const calMonthStart = new Date(year, month - 1, 1)
+    const calMonthEnd = new Date(year, month, 1)
     const expenseAgg = await prisma.expense.aggregate({
-      where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: monthStart, lt: monthEnd } },
+      where: { ...(branchId ? { branch_id: branchId } : {}), created_at: { gte: calMonthStart, lt: calMonthEnd } },
       _sum: { amount: true },
     })
     const otherExpenses = Number(expenseAgg._sum.amount || 0)
+
+    // Supplier debts — total amount_owed across ALL unpaid/partial expenses
+    // (not date-scoped: debts accumulate until paid regardless of month)
+    const supplierDebtAgg = await prisma.expense.aggregate({
+      where: { ...(branchId ? { branch_id: branchId } : {}), amount_owed: { gt: 0 } },
+      _sum: { amount_owed: true },
+    })
+    const supplierDebts = Number(supplierDebtAgg._sum.amount_owed || 0)
 
     // Approved collector discounts
     const discountAgg = await prisma.collectorDiscountRequest.aggregate({
@@ -292,6 +306,7 @@ export async function GET(req: NextRequest) {
       online_payments: { count: onlineCount, total: onlineTotal },
       expenses: { salaries, tips, discounts: approvedDiscounts, other: otherExpenses, total: totalExpenses },
       net_profit: totalCollected - totalExpenses,
+      supplier_debts: supplierDebts,
       staff_wallets: staffWallets,
       previous_month: { total_collected: prevCollected, net_profit: prevNet, growth_percent: growthPercent },
       month, year,
