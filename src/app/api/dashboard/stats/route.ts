@@ -435,6 +435,15 @@ export async function GET(req: NextRequest) {
         load: latestLoadLog,
         runtime_hours: firstEngine ? { current: Number(firstEngine.runtime_hours ?? 0), max: firstEngine.oil_change_hours ?? 250 } : null,
       },
+      fuel_tanks: await prisma.fuelTank.findMany({
+        where: { generator: { branch_id: { in: branchIds } }, is_active: true },
+        orderBy: [{ generator_id: 'asc' }, { sensor_index: 'asc' }],
+        select: {
+          id: true, name: true, tank_type: true, current_pct: true,
+          capacity_liters: true, last_updated: true,
+          generator: { select: { name: true } },
+        },
+      }),
       plan: await (async () => {
         try {
           const plans = await prisma.$queryRaw`

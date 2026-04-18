@@ -256,6 +256,22 @@ export async function GET() {
     console.warn('[staff-widgets/engines]', err.message)
   }
 
+  // Fuel tanks for this branch
+  let fuelTanks: any[] = []
+  try {
+    fuelTanks = await prisma.fuelTank.findMany({
+      where: { generator: { branch_id: branchId }, is_active: true },
+      orderBy: [{ generator_id: 'asc' }, { sensor_index: 'asc' }],
+      select: {
+        id: true, name: true, tank_type: true, current_pct: true,
+        capacity_liters: true, last_updated: true,
+        generator: { select: { name: true } },
+      },
+    })
+  } catch (err: any) {
+    console.warn('[staff-widgets/fuel]', err.message)
+  }
+
   return NextResponse.json({
     collection,
     goal,
@@ -263,5 +279,6 @@ export async function GET() {
     leaderboard,
     next_subscriber: nextSubscriber,
     engines,
+    fuel_tanks: fuelTanks,
   })
 }
