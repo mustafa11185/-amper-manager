@@ -149,6 +149,15 @@ export async function GET(
       normal_current_a: latestLoad?.normal_current_a != null ? Number(latestLoad.normal_current_a) : null,
       load_at: latestLoad?.logged_at ?? null,
     },
+    // Fuel tanks (multi-tank support)
+    fuel_tanks: await prisma.fuelTank.findMany({
+      where: { generator_id: engine.generator.id, is_active: true },
+      orderBy: { sensor_index: 'asc' },
+      select: {
+        id: true, name: true, tank_type: true, sensor_index: true,
+        capacity_liters: true, current_pct: true, last_updated: true,
+      },
+    }),
     // Modbus-enriched snapshot (null when source=esp32_sensors)
     modbus: latestTelemetry?.source?.startsWith('modbus') ? {
       source: latestTelemetry.source,
