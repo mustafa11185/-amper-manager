@@ -84,26 +84,82 @@ export async function POST(req: NextRequest) {
     } catch (_) {}
   }
 
-  // Calculate fuel % — Modbus gives it directly, ESP32 uses ultrasonic distance
+  // ── Multi-tank fuel readings ──────────────────────────────
+  // The gateway sends fuel_tanks: [{index, name, type, fuel_pct, distance_cm}]
+  // Each tank maps to a FuelTank record (auto-created if missing).
+  const fuelTanks = body.fuel_tanks as Array<{
+    index: number; name?: string; type?: string;
+    fuel_pct: number; distance_cm?: number;
+  }> | undefined;
+
   let fuel_pct: number | undefined;
-  if (directFuelPct !== undefined) {
-    fuel_pct = directFuelPct;
-  } else if (fuel_distance_cm !== undefined && engine) {
-    const emptyDist = generator.tank_empty_dist_cm ?? 100;
-    const fullDist = generator.tank_full_dist_cm ?? 5;
-    fuel_pct = Math.max(0, Math.min(100,
-      ((emptyDist - fuel_distance_cm) / (emptyDist - fullDist)) * 100));
+
+  if (fuelTanks && fuelTanks.length > 0) {
+    for (const ft of fuelTanks) {
+      if (ft.fuel_pct < 0) continue; // skip failed readings
+
+      // Upsert FuelTank record (auto-create on first reading)
+      try {
+        const tank = await prisma.fuelTank.upsert({
+          where: { generator_id_sensor_index: { generator_id: generator.id, sensor_index: ft.index } },
+          create: {
+            generator_id: generator.id,
+            name: ft.name || (ft.index === 0 ? 'داخلي' : 'خارجي'),
+            tank_type: ft.type || (ft.index === 0 ? 'internal' : 'external'),
+            sensor_index: ft.index,
+            current_pct: ft.fuel_pct,
+            last_updated: new Date(),
+          },
+          update: {
+            current_pct: ft.fuel_pct,
+            last_updated: new Date(),
+            ...(ft.name ? { name: ft.name } : {}),
+          },
+        });
+
+        // Log the reading
+        await prisma.fuelLog.create({
+          data: {
+            generator_id: generator.id,
+            engine_id: engine?.id,
+            tank_id: tank.id,
+            fuel_level_percent: ft.fuel_pct,
+            distance_cm: ft.distance_cm,
+            source: isModbus ? 'modbus' : 'iot',
+          },
+        });
+      } catch (e) {
+        console.warn('[telemetry] tank log failed:', e);
+      }
+    }
+    // Primary fuel = first tank (backwards compat for dashboard gauge)
+    fuel_pct = fuelTanks[0]?.fuel_pct;
   }
 
-  if (fuel_pct !== undefined && engine) {
-    await prisma.fuelLog.create({
-      data: {
-        engine_id: engine.id,
-        fuel_level_percent: fuel_pct,
-        distance_cm: fuel_distance_cm,
-        source: isModbus ? 'modbus' : 'iot',
-      },
-    });
+  // Legacy single-sensor fuel (no fuel_tanks array)
+  if (fuel_pct === undefined) {
+    if (directFuelPct !== undefined) {
+      fuel_pct = directFuelPct;
+    } else if (fuel_distance_cm !== undefined) {
+      const emptyDist = generator.tank_empty_dist_cm ?? 100;
+      const fullDist = generator.tank_full_dist_cm ?? 5;
+      fuel_pct = Math.max(0, Math.min(100,
+        ((emptyDist - fuel_distance_cm) / (emptyDist - fullDist)) * 100));
+    }
+    if (fuel_pct !== undefined && engine) {
+      await prisma.fuelLog.create({
+        data: {
+          engine_id: engine.id,
+          fuel_level_percent: fuel_pct,
+          distance_cm: fuel_distance_cm,
+          source: isModbus ? 'modbus' : 'iot',
+        },
+      });
+    }
+  }
+
+  // Update generator-level fuel snapshot
+  if (fuel_pct !== undefined) {
     await prisma.generator.update({
       where: { id: generator.id },
       data: { fuel_level_pct: fuel_pct, last_fuel_update: new Date() },
