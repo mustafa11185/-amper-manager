@@ -29,57 +29,57 @@ function getTabsForRole(role: string, canCollect?: boolean): Tab[] {
   switch (role) {
     case 'owner':
       return [
-        { label: 'الرئيسية', href: '/dashboard', icon: Home },
-        { label: 'المشتركون', href: '/subscribers', icon: Users },
-        { label: 'الدفع', href: '/pos', icon: CreditCard, elevated: true },
-        { label: 'التقارير', href: '/reports', icon: BarChart3 },
-        { label: 'الإعدادات', href: '/settings', icon: Settings },
+        { label: 'الرئيسية', href: '/staff/dashboard', icon: Home },
+        { label: 'المشتركون', href: '/staff/subscribers', icon: Users },
+        { label: 'الدفع', href: '/staff/pos', icon: CreditCard, elevated: true },
+        { label: 'التقارير', href: '/staff/reports', icon: BarChart3 },
+        { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
       ]
     case 'collector':
       return [
-        { label: 'الرئيسية', href: '/dashboard', icon: Home },
-        { label: 'المشتركون', href: '/subscribers', icon: Users },
-        { label: 'الدفع', href: '/pos', icon: CreditCard, elevated: true },
-        { label: 'تقريري', href: '/my-report', icon: BarChart3 },
-        { label: 'الإعدادات', href: '/settings', icon: Settings },
+        { label: 'الرئيسية', href: '/staff/dashboard', icon: Home },
+        { label: 'المشتركون', href: '/staff/subscribers', icon: Users },
+        { label: 'الدفع', href: '/staff/pos', icon: CreditCard, elevated: true },
+        { label: 'تقريري', href: '/staff/my-report', icon: BarChart3 },
+        { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
       ]
     case 'cashier':
       return [
-        { label: 'الرئيسية', href: '/dashboard', icon: Home },
-        { label: 'الدفع', href: '/pos', icon: CreditCard, elevated: true },
-        { label: 'المحفظة', href: '/wallet', icon: Wallet },
-        { label: 'اليوم', href: '/my-report', icon: BarChart3 },
-        { label: 'الإعدادات', href: '/settings', icon: Settings },
+        { label: 'الرئيسية', href: '/staff/dashboard', icon: Home },
+        { label: 'الدفع', href: '/staff/pos', icon: CreditCard, elevated: true },
+        { label: 'المحفظة', href: '/staff/wallet', icon: Wallet },
+        { label: 'اليوم', href: '/staff/my-report', icon: BarChart3 },
+        { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
       ]
     case 'accountant':
       if (canCollect) {
         return [
-          { label: 'الرئيسية', href: '/dashboard', icon: Home },
-          { label: 'المشتركون', href: '/subscribers', icon: Users },
-          { label: 'الدفع', href: '/pos', icon: CreditCard, elevated: true },
-          { label: 'التقارير', href: '/reports', icon: BarChart3 },
-          { label: 'الإعدادات', href: '/settings', icon: Settings },
+          { label: 'الرئيسية', href: '/staff/dashboard', icon: Home },
+          { label: 'المشتركون', href: '/staff/subscribers', icon: Users },
+          { label: 'الدفع', href: '/staff/pos', icon: CreditCard, elevated: true },
+          { label: 'التقارير', href: '/staff/reports', icon: BarChart3 },
+          { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
         ]
       }
       return [
-        { label: 'الرئيسية', href: '/dashboard', icon: Home },
-        { label: 'المشتركون', href: '/subscribers', icon: Users },
-        { label: 'التقارير', href: '/reports', icon: BarChart3 },
-        { label: 'الفواتير', href: '/invoices', icon: FileText },
-        { label: 'الإعدادات', href: '/settings', icon: Settings },
+        { label: 'الرئيسية', href: '/staff/dashboard', icon: Home },
+        { label: 'المشتركون', href: '/staff/subscribers', icon: Users },
+        { label: 'التقارير', href: '/staff/reports', icon: BarChart3 },
+        { label: 'الفواتير', href: '/staff/invoices', icon: FileText },
+        { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
       ]
     case 'operator':
       return [
-        { label: 'الدوام', href: '/attendance', icon: CheckCircle },
-        { label: 'المحركات', href: '/op-engines', icon: Zap },
-        { label: 'الوقود', href: '/fuel', icon: Fuel },
-        { label: 'سجلاتي', href: '/op-logs', icon: ClipboardList },
-        { label: 'الإعدادات', href: '/settings', icon: Settings },
+        { label: 'الدوام', href: '/staff/attendance', icon: CheckCircle },
+        { label: 'المحركات', href: '/staff/op-engines', icon: Zap },
+        { label: 'الوقود', href: '/staff/fuel', icon: Fuel },
+        { label: 'سجلاتي', href: '/staff/op-logs', icon: ClipboardList },
+        { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
       ]
     default:
       return [
-        { label: 'الرئيسية', href: '/dashboard', icon: Home },
-        { label: 'الإعدادات', href: '/settings', icon: Settings },
+        { label: 'الرئيسية', href: '/staff/dashboard', icon: Home },
+        { label: 'الإعدادات', href: '/staff/settings', icon: Settings },
       ]
   }
 }

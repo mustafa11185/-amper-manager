@@ -178,7 +178,7 @@ export default function SubscribersPage() {
           {subscribers.map(sub => (
             <button
               key={sub.id}
-              onClick={() => router.push(`/subscribers/${sub.id}`)}
+              onClick={() => router.push(`/staff/subscribers/${sub.id}`)}
               className="w-full bg-bg-surface rounded-2xl p-3 flex items-center gap-3 text-right"
               style={{ boxShadow: 'var(--shadow-sm)' }}
             >

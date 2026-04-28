@@ -94,7 +94,7 @@ export default function StaffTrackingPage() {
     <div className="p-4 space-y-3">
       {/* Header */}
       <div className="flex items-center gap-2 mb-1">
-        <Link href="/dashboard" className="text-text-muted"><ChevronLeft size={20} /></Link>
+        <Link href="/staff/dashboard" className="text-text-muted"><ChevronLeft size={20} /></Link>
         <h1 className="text-lg font-bold">تتبع الموظفين</h1>
       </div>
 

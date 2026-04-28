@@ -40,9 +40,9 @@ export default function LoginContent() {
     const role = session?.user?.role
 
     if (role === 'operator') {
-      router.push('/attendance')
+      router.push('/staff/attendance')
     } else {
-      router.push('/dashboard')
+      router.push('/staff/dashboard')
     }
   }
 

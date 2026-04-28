@@ -28,7 +28,7 @@ export default function TopBar() {
 
   // Reset badge immediately when on notifications page
   useEffect(() => {
-    if (pathname === '/notifications') {
+    if (pathname === '/staff/notifications') {
       setUnreadCount(0)
     }
   }, [pathname])
@@ -43,7 +43,7 @@ export default function TopBar() {
           مرحباً {session?.user?.name?.split(' ')[0] || ''}
         </p>
       </div>
-      <Link href="/notifications" className="relative p-2">
+      <Link href="/staff/notifications" className="relative p-2">
         <Bell size={22} className="text-text-secondary" />
         {unreadCount > 0 && (
           <span className="absolute top-1 left-1 min-w-[18px] h-[18px] rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center px-1">

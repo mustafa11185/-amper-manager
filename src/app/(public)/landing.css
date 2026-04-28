@@ -1,0 +1,111 @@
+/* Landing-only theme — scoped under .landing-root so tokens & utility
+ * classes never leak into the staff app or the customer portal.
+ *
+ * Loaded by /(public)/layout.tsx; the layout wraps children in a div
+ * with class "landing-root" which grounds all CSS variables.
+ *
+ * Why scoped: the staff app uses a light theme (--color-bg-base #EEF3FF)
+ * while landing uses a dark theme (--bg-dark #060D1A). Defining these
+ * at :root would override one or the other globally. */
+
+.landing-root {
+  --bg-dark: #060D1A;
+  --bg-card: #0D1B2A;
+  --bg-elevated: #1E293B;
+  --blue: #1B4FD8;
+  --blue-bright: #2D8CFF;
+  --blue-soft: rgba(45,140,255,0.1);
+  --violet: #7C3AED;
+  --violet-soft: rgba(124,58,237,0.1);
+  --gold: #D97706;
+  --text: #E2E8F0;
+  --text-muted: #64748B;
+  --border: rgba(45,140,255,0.15);
+  --border-hover: rgba(45,140,255,0.35);
+  --glow-blue: 0 0 40px rgba(45,140,255,0.25);
+  --glow-violet: 0 0 40px rgba(124,58,237,0.25);
+  --gradient-hero: linear-gradient(135deg, #1B4FD8 0%, #7C3AED 100%);
+
+  background: var(--bg-dark);
+  color: var(--text);
+  min-height: 100dvh;
+  scroll-behavior: smooth;
+  font-family: 'Tajawal', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utility classes — scoped under landing-root so they only apply on
+ * landing pages. (The portal/staff apps don't need them.) */
+
+.landing-root .font-num { font-family: 'Rajdhani', sans-serif; font-weight: 700; }
+.landing-root .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+.landing-root .grid-bg {
+  background-image:
+    linear-gradient(rgba(45,140,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45,140,255,0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+.landing-root .gradient-text {
+  background: linear-gradient(135deg, #2D8CFF, #7C3AED);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing-root .gradient-text-gold {
+  background: linear-gradient(135deg, #D97706, #F59E0B);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing-root .glass-card {
+  background: rgba(13,27,42,0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  transition: all 0.3s ease;
+}
+.landing-root .glass-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--glow-blue);
+  transform: translateY(-2px);
+}
+
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes landing-fade-up {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes landing-pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.landing-root .animate-float { animation: landing-float 4s ease-in-out infinite; }
+.landing-root .animate-fade-up { animation: landing-fade-up 0.6s ease both; }
+.landing-root .delay-1 { animation-delay: 0.1s; }
+.landing-root .delay-2 { animation-delay: 0.2s; }
+.landing-root .delay-3 { animation-delay: 0.3s; }
+.landing-root .delay-4 { animation-delay: 0.4s; }
+.landing-root .delay-5 { animation-delay: 0.5s; }
+.landing-root .delay-6 { animation-delay: 0.6s; }
+
+.landing-root .glow-border { position: relative; }
+.landing-root .glow-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 21px;
+  background: linear-gradient(135deg, rgba(45,140,255,0.4), rgba(124,58,237,0.4));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.landing-root .glow-border:hover::before { opacity: 1; }

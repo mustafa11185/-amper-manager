@@ -58,7 +58,7 @@ export default function MapPage() {
   }
 
   function handleCollectorTap(staffId: string) {
-    router.push(`/wallets?highlight=${staffId}`)
+    router.push(`/staff/wallets?highlight=${staffId}`)
   }
 
   return (

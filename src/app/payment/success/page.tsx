@@ -13,7 +13,7 @@ export default function PaymentSuccessPage() {
       </div>
       <h1 className="text-xl font-bold mb-2">تم الدفع بنجاح ✅</h1>
       <p className="text-sm text-text-muted mb-6">شكراً لك — تم تسجيل الدفعة الإلكترونية</p>
-      <Link href={subscriberId ? `/subscribers/${subscriberId}` : '/dashboard'}
+      <Link href={subscriberId ? `/staff/subscribers/${subscriberId}` : '/staff/dashboard'}
         className="h-11 px-6 rounded-xl text-white text-sm font-bold flex items-center justify-center"
         style={{ background: '#1B4FD8' }}>
         العودة

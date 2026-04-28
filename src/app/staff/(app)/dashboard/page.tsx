@@ -232,7 +232,7 @@ export default function DashboardPage() {
 
       {/* A) HERO CARD */}
       {canSeeFinance && (
-        <Link href="/subscribers" className="block rounded-2xl p-5" style={{ background: 'linear-gradient(135deg, #1B4FD8 0%, #7C3AED 100%)', boxShadow: '0 8px 32px rgba(27,79,216,0.3)' }}>
+        <Link href="/staff/subscribers" className="block rounded-2xl p-5" style={{ background: 'linear-gradient(135deg, #1B4FD8 0%, #7C3AED 100%)', boxShadow: '0 8px 32px rgba(27,79,216,0.3)' }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-2.5 h-2.5 rounded-full" style={{ background: stats?.generator?.run_status ? '#22C55E' : '#EF4444', boxShadow: stats?.generator?.run_status ? '0 0 8px #22C55E' : 'none' }} />
             <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px', fontWeight: 500 }}>{stats?.generator?.name ?? 'المولدة'}</span>
@@ -268,7 +268,7 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {wallets.map((w: any) => (
-              <Link key={w.id} href="/wallets" className="flex items-center gap-3 p-2 rounded-xl" style={{ background: 'var(--bg-muted)' }}>
+              <Link key={w.id} href="/staff/wallets" className="flex items-center gap-3 p-2 rounded-xl" style={{ background: 'var(--bg-muted)' }}>
                 <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0" style={{ background: 'var(--bg-base)' }}>
                   {w.staff_photo ? <img src={w.staff_photo} alt="" className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-text-muted">{w.staff_name?.charAt(0)}</span>}
                 </div>
@@ -285,7 +285,7 @@ export default function DashboardPage() {
 
       {/* C) ENGINE GAUGES */}
       {canSeeEngine && stats?.gauges && (
-        <Link href="/engines" className="block bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
+        <Link href="/staff/engines" className="block bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
           <div className="flex items-center gap-2 mb-3">
             <div className={`w-2.5 h-2.5 rounded-full ${stats?.generator?.run_status ? 'bg-success' : 'bg-danger'}`} />
             <span className="text-sm font-bold">حالة المحرك</span>
@@ -328,19 +328,19 @@ export default function DashboardPage() {
       {/* D) QUICK STATS */}
       {canSeeFinance && (
         <div className="grid grid-cols-2 gap-3">
-          <Link href="/debts" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
+          <Link href="/staff/debts" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
             <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-danger/10"><AlertTriangle size={16} className="text-danger" /></div>
             <div className="flex-1"><p className="text-[10px] text-text-muted">الديون</p><p className="font-num text-sm font-bold text-danger">{fmt(stats?.total_debt)}</p></div>
           </Link>
-          <Link href="/subscribers" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
+          <Link href="/staff/subscribers" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
             <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-violet/10"><Zap size={16} className="text-violet" /></div>
             <div className="flex-1"><p className="text-[10px] text-text-muted">الأمبير</p><p className="font-num text-sm font-bold">{stats?.total_amperage ?? 0}A</p></div>
           </Link>
-          <Link href="/expenses" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
+          <Link href="/staff/expenses" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
             <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gold/10"><Receipt size={16} className="text-gold" /></div>
             <div className="flex-1"><p className="text-[10px] text-text-muted">المصروفات</p><p className="font-num text-sm font-bold text-gold">—</p></div>
           </Link>
-          <Link href="/subscribers" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
+          <Link href="/staff/subscribers" className="bg-bg-surface rounded-2xl p-3.5 flex items-center gap-3" style={{ boxShadow: 'var(--shadow-md)' }}>
             <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-blue-primary/10"><Users size={16} className="text-blue-primary" /></div>
             <div className="flex-1"><p className="text-[10px] text-text-muted">المشتركون</p><p className="font-num text-sm font-bold">{stats?.total_subscribers ?? 0}</p></div>
           </Link>
@@ -382,7 +382,7 @@ export default function DashboardPage() {
         <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-bold flex items-center gap-1.5"><AlertTriangle size={12} className="text-danger" /> أكبر المدينين</span>
-            <Link href="/debts" className="text-[10px] text-blue-primary font-bold">الكل</Link>
+            <Link href="/staff/debts" className="text-[10px] text-blue-primary font-bold">الكل</Link>
           </div>
           {debtors.map((d: any) => (
             <div key={d.id} className="flex items-center justify-between py-1.5">
@@ -396,7 +396,7 @@ export default function DashboardPage() {
       {/* Floating map button */}
       {canSeeFinance && (
         <Link
-          href="/map"
+          href="/staff/map"
           className="fixed left-4 bottom-24 z-40 w-12 h-12 rounded-full flex items-center justify-center shadow-lg"
           style={{ background: 'linear-gradient(135deg, #1B4FD8, #7C3AED)', boxShadow: '0 4px 20px rgba(27,79,216,0.4)' }}
         >
@@ -420,14 +420,14 @@ function OwnerAsCollectorCard() {
       <p className="text-sm font-bold text-text-primary mb-3">🎩 أنت تعمل كجابي بنفسك</p>
       <div className="flex gap-2">
         <Link
-          href="/pos"
+          href="/staff/pos"
           className="flex-1 h-10 rounded-xl bg-blue-primary text-white text-xs font-bold flex items-center justify-center gap-1.5"
         >
           <CreditCard size={14} />
           فتح POS
         </Link>
         <Link
-          href="/my-report"
+          href="/staff/my-report"
           className="flex-1 h-10 rounded-xl bg-bg-surface border border-border text-text-primary text-xs font-bold flex items-center justify-center gap-1.5"
         >
           <BarChart3 size={14} />

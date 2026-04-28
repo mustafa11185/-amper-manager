@@ -51,7 +51,7 @@ export default function DebtsPage() {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <span className="font-num text-sm font-bold text-danger">{fmt(d.total_debt)}</span>
-              <button onClick={() => router.push(`/pos?subscriber=${d.id}&type=debt`)}
+              <button onClick={() => router.push(`/staff/pos?subscriber=${d.id}&type=debt`)}
                 className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--blue-soft)' }}>
                 <CreditCard size={14} className="text-blue-primary" />
               </button>

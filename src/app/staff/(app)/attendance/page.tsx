@@ -193,10 +193,10 @@ export default function AttendancePage() {
         <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-sm)' }}>
           <p className="text-xs text-text-muted mb-2">الإجراءات المتاحة</p>
           <div className="grid grid-cols-2 gap-2">
-            <a href="/op-engines" className="h-12 rounded-xl bg-blue-soft text-blue-primary text-xs font-bold flex items-center justify-center gap-1.5">
+            <a href="/staff/op-engines" className="h-12 rounded-xl bg-blue-soft text-blue-primary text-xs font-bold flex items-center justify-center gap-1.5">
               ⚡ المحركات
             </a>
-            <a href="/op-logs" className="h-12 rounded-xl bg-violet-soft text-violet text-xs font-bold flex items-center justify-center gap-1.5">
+            <a href="/staff/op-logs" className="h-12 rounded-xl bg-violet-soft text-violet text-xs font-bold flex items-center justify-center gap-1.5">
               📋 سجلاتي
             </a>
           </div>
