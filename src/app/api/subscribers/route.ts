@@ -204,6 +204,17 @@ export async function POST(req: NextRequest) {
   const user = session.user as any
   const tenantId = user.tenantId as string
 
+  // Owners always allowed; staff need explicit can_add_subscribers.
+  if (user.role !== 'owner') {
+    const staff = await prisma.staff.findUnique({
+      where: { id: user.id },
+      select: { can_add_subscribers: true },
+    })
+    if (!staff?.can_add_subscribers) {
+      return NextResponse.json({ error: 'غير مصرح — تحتاج صلاحية إضافة المشتركين' }, { status: 403 })
+    }
+  }
+
   try {
     const body = await req.json()
     const { name, phone, address, alley, alley_id, amperage, subscription_type, gps_lat, gps_lng, branch_id, generator_id, meter_number } = body

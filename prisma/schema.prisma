@@ -117,6 +117,7 @@ model Tenant {
   discounts             TenantDiscount[]
   staff_salary_configs  StaffSalaryConfig[]
   salary_payments       SalaryPayment[]
+  payment_gateway_creds PaymentGatewayCredentials[]
   @@map("tenants")
 }
 
@@ -584,6 +585,8 @@ model Staff {
   can_send_urgent Boolean             @default(false)
   can_view_phones        Boolean      @default(true)
   can_view_others_debt   Boolean      @default(false)
+  can_add_subscribers    Boolean      @default(false)
+  can_edit_subscribers   Boolean      @default(false)
   can_view_wallet        Boolean      @default(true)
   can_view_salary        Boolean      @default(true)
   can_send_whatsapp      Boolean      @default(true)
@@ -1387,6 +1390,32 @@ model OnlinePayment {
   tenant          Tenant   @relation(fields: [tenant_id], references: [id])
   @@index([tenant_id, status])
   @@map("online_payments")
+}
+
+// Per-tenant credentials for online payment gateways (ZainCash, Qi, AsiaPay, ...).
+// `encrypted_credentials` is a single ciphertext blob (AES-256-GCM, base64) of a
+// gateway-specific JSON object — each gateway has its own field shape (client_id,
+// client_secret, api_key, app_id, app_key, app_secret, private_key, merchant_code,
+// msisdn, ...). The plaintext shape is owned by the gateway adapter, never the DB.
+//
+// Why this lives in its own table (not on Tenant): each tenant may configure 0–N
+// gateways, and we want to add new gateways without schema migrations. The unique
+// (tenant_id, gateway) pair prevents duplicate rows per gateway per tenant.
+model PaymentGatewayCredentials {
+  id                    String   @id @default(uuid())
+  tenant_id             String
+  gateway               String   // 'zaincash' | 'qi' | 'asiapay' (string for forward-compat)
+  encrypted_credentials String   @db.Text
+  is_enabled            Boolean  @default(false)
+  is_default            Boolean  @default(false)
+  is_test_mode          Boolean  @default(true)
+  display_name          String?
+  last_validated_at     DateTime?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+  tenant                Tenant   @relation(fields: [tenant_id], references: [id])
+  @@unique([tenant_id, gateway])
+  @@map("payment_gateway_credentials")
 }
 
 model SubscriberPublicToken {

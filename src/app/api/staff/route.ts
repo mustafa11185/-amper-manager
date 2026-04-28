@@ -86,6 +86,8 @@ export async function POST(req: NextRequest) {
         is_owner_acting: is_owner_acting || false,
         can_collect: can_collect || role === 'collector' || role === 'kiosk',
         can_operate: can_operate || role === 'operator' || role === 'kiosk',
+        ...(body.can_add_subscribers !== undefined && { can_add_subscribers: body.can_add_subscribers }),
+        ...(body.can_edit_subscribers !== undefined && { can_edit_subscribers: body.can_edit_subscribers }),
         is_active: true,
       },
     })

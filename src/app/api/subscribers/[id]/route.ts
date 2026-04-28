@@ -79,9 +79,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as any
-  // Only owner or accountant can edit subscribers
+  // Owner/accountant always allowed; other staff need can_edit_subscribers.
   if (user.role !== 'owner' && user.role !== 'accountant') {
-    return NextResponse.json({ error: 'غير مصرح بتعديل المشتركين' }, { status: 403 })
+    const staff = await prisma.staff.findUnique({
+      where: { id: user.id },
+      select: { can_edit_subscribers: true },
+    })
+    if (!staff?.can_edit_subscribers) {
+      return NextResponse.json({ error: 'غير مصرح بتعديل المشتركين' }, { status: 403 })
+    }
   }
 
   const { id } = await params
