@@ -1,17 +1,12 @@
 // Initiate an online payment for the authenticated subscriber.
 //
-// payment_method values, dispatched in this order:
-//   - 'zaincash' | 'qi' | 'asiapay'  → new typed adapter (lib/payments/*).
-//     Per-tenant credentials are loaded + decrypted server-side; the
-//     subscriber's body never touches plaintext.
-//   - 'aps' | 'furatpay'             → legacy createPayment() path. The
-//     branch's active_gateway field decides which one runs.
-//   - missing / unknown              → falls through to the legacy path
-//     with whatever active_gateway the branch is set to.
+// Only the typed adapter layer is supported: 'zaincash' | 'qi' | 'asiapay'.
+// Per-tenant credentials are loaded + decrypted server-side; the request
+// body never carries plaintext credentials.
 //
 // Validation that runs before any gateway is contacted:
 //   1. branch.is_online_payment_enabled must be true (per-branch kill switch)
-//   2. amount must equal what the subscriber actually owes (no overpay,
+//   2. amount must be ≤ what the subscriber actually owes (no overpay,
 //      no arbitrary amounts)
 //   3. invoice_id, if supplied, must belong to the authenticated subscriber
 //      (defeats the "pay someone else's invoice" trick)
@@ -21,12 +16,10 @@ import crypto from "crypto";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createPayment } from "@/lib/payment-service";
 import { getGateway, type GatewayName } from "@/lib/payments";
 import { cookies } from "next/headers";
 
-const NEW_GATEWAYS: GatewayName[] = ['zaincash', 'qi', 'asiapay'];
-const LEGACY_GATEWAYS = ['aps', 'furatpay'] as const;
+const SUPPORTED_GATEWAYS: GatewayName[] = ['zaincash', 'qi', 'asiapay'];
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,6 +27,12 @@ export async function POST(req: NextRequest) {
     const { invoice_id, amount, payment_method, subscriber_id: bodySubscriberId } = body;
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
+    }
+    if (!SUPPORTED_GATEWAYS.includes(payment_method as GatewayName)) {
+      return NextResponse.json(
+        { error: "بوابة دفع غير صالحة" },
+        { status: 400 }
+      );
     }
 
     // Two auth modes accepted on this endpoint:
@@ -55,7 +54,6 @@ export async function POST(req: NextRequest) {
       if (!bodySubscriberId) {
         return NextResponse.json({ error: "subscriber_id مطلوب" }, { status: 400 });
       }
-      // Staff can only initiate payments for subscribers in their own tenant.
       const targetTenant = await prisma.subscriber.findUnique({
         where: { id: bodySubscriberId },
         select: { tenant_id: true },
@@ -73,16 +71,11 @@ export async function POST(req: NextRequest) {
     if (!subscriber) return NextResponse.json({ error: "مشترك غير موجود" }, { status: 404 });
 
     const branch = subscriber.branch;
-
-    // Per-branch kill switch — checked once for both legacy and new paths.
     if (!branch.is_online_payment_enabled) {
       return NextResponse.json({ error: "الدفع الإلكتروني غير مفعّل لهذا الفرع" }, { status: 400 });
     }
 
     // ---- Amount + invoice ownership validation ---------------------------
-    // Compute the subscriber's true ceiling: unpaid balance on the supplied
-    // invoice (if any) plus any accumulated debt. We tolerate a 1 IQD
-    // rounding band — clients sometimes ship amounts as 1234.56 → 1235.
     let invoice: { id: string; subscriber_id: string; total_amount_due: number; amount_paid: number } | null = null;
     if (invoice_id) {
       const inv = await prisma.invoice.findUnique({
@@ -91,8 +84,6 @@ export async function POST(req: NextRequest) {
       });
       if (!inv) return NextResponse.json({ error: "فاتورة غير موجودة" }, { status: 404 });
       if (inv.subscriber_id !== subscriber.id) {
-        // Authenticated subscriber tried to pay someone else's invoice. Log
-        // and reject — this is a deliberate auth bypass attempt, not a typo.
         console.warn(`[payment/init] cross-subscriber invoice attempt: sub=${subscriber.id} inv=${inv.id} owner=${inv.subscriber_id}`);
         return NextResponse.json({ error: "فاتورة غير مرتبطة بحسابك" }, { status: 403 });
       }
@@ -115,98 +106,36 @@ export async function POST(req: NextRequest) {
     }
     // ---------------------------------------------------------------------
 
-    // New gateways (ZainCash, Qi, AsiaPay) — typed adapter layer.
-    if (NEW_GATEWAYS.includes(payment_method as GatewayName)) {
-      const gw = payment_method as GatewayName;
-      const gateway = await getGateway(subscriber.tenant_id, gw);
-      if (!gateway) {
-        return NextResponse.json(
-          { error: `بوابة ${gw} غير مفعّلة لهذا التاجر` },
-          { status: 400 }
-        );
-      }
-
-      const externalRef = crypto.randomUUID();
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3002";
-
-      let initResult;
-      try {
-        initResult = await gateway.initiate({
-          externalRef,
-          orderId: invoice_id ? `INV-${invoice_id}` : `SUB-${subscriber.id}-${Date.now()}`,
-          amountIqd: amount,
-          customerPhone: subscriber.phone || undefined,
-          successUrl: `${baseUrl}/api/payment/callback/${gw}?t=${subscriber.tenant_id}`,
-          failureUrl: `${baseUrl}/api/payment/callback/${gw}?t=${subscriber.tenant_id}`,
-          language: 'ar',
-        });
-      } catch (e: any) {
-        console.error(`[payment/init] ${gw} initiate failed:`, e.message);
-        return NextResponse.json(
-          { error: `فشل إنشاء الدفع عبر ${gw}: ${e.message}` },
-          { status: 502 }
-        );
-      }
-
-      await prisma.onlinePayment.create({
-        data: {
-          subscriber_id: subscriber.id,
-          tenant_id: subscriber.tenant_id,
-          invoice_id: invoice_id || null,
-          amount,
-          gateway: gw,
-          gateway_ref: `${externalRef}|${initResult.gatewayTxId}`,
-          status: 'pending',
-        },
-      });
-
-      return NextResponse.json({
-        payment_url: initResult.redirectUrl,
-        order_id: initResult.gatewayTxId,
-        gateway: gw,
-      });
-    }
-
-    // Legacy path (APS / FuratPay).
-    //
-    // The portal's payment-options endpoint emits explicit 'aps' / 'furatpay'
-    // values. Older builds (and the staff Flutter app) still send card-shape
-    // hints like 'qi_card' / 'visa' / null — those fall through to the
-    // branch's active_gateway. Either way, createPayment() routes based on
-    // branch.active_gateway internally.
-    const isLegacyKnown = (LEGACY_GATEWAYS as readonly string[]).includes(payment_method);
-    if (!isLegacyKnown && branch.active_gateway === "none") {
-      return NextResponse.json({ error: "الدفع الإلكتروني غير مفعّل" }, { status: 400 });
-    }
-    // If client asked for a specific legacy gateway but the branch is set
-    // to a different one, refuse rather than silently routing to the wrong
-    // merchant account.
-    if (isLegacyKnown && payment_method !== branch.active_gateway) {
+    const gw = payment_method as GatewayName;
+    const gateway = await getGateway(subscriber.tenant_id, gw);
+    if (!gateway) {
       return NextResponse.json(
-        { error: `بوابة ${payment_method} غير مفعّلة لهذا الفرع` },
+        { error: `بوابة ${gw} غير مفعّلة لهذا التاجر` },
         { status: 400 }
       );
     }
 
-    const pricing = await prisma.monthlyPricing.findFirst({
-      where: { branch_id: branch.id },
-      orderBy: { effective_from: "desc" },
-    });
-    const billingMonth = pricing ? new Date(pricing.effective_from).getMonth() + 1 : new Date().getMonth() + 1;
-
+    const externalRef = crypto.randomUUID();
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3002";
-    const callbackPath = branch.active_gateway === "aps" ? "aps-callback" : "furatpay-callback";
 
-    const result = await createPayment(branch as any, {
-      invoice_id: invoice_id || null,
-      subscriber_id: subscriber.id,
-      subscriber_name: subscriber.name,
-      subscriber_phone: subscriber.phone || "",
-      amount,
-      billing_month: billingMonth,
-      return_url: `${baseUrl}/payment/success`,
-      callback_url: `${baseUrl}/api/payment/${callbackPath}`,
-    });
+    let initResult;
+    try {
+      initResult = await gateway.initiate({
+        externalRef,
+        orderId: invoice_id ? `INV-${invoice_id}` : `SUB-${subscriber.id}-${Date.now()}`,
+        amountIqd: amount,
+        customerPhone: subscriber.phone || undefined,
+        successUrl: `${baseUrl}/api/payment/callback/${gw}?t=${subscriber.tenant_id}`,
+        failureUrl: `${baseUrl}/api/payment/callback/${gw}?t=${subscriber.tenant_id}`,
+        language: 'ar',
+      });
+    } catch (e: any) {
+      console.error(`[payment/init] ${gw} initiate failed:`, e.message);
+      return NextResponse.json(
+        { error: `فشل إنشاء الدفع عبر ${gw}: ${e.message}` },
+        { status: 502 }
+      );
+    }
 
     await prisma.onlinePayment.create({
       data: {
@@ -214,13 +143,17 @@ export async function POST(req: NextRequest) {
         tenant_id: subscriber.tenant_id,
         invoice_id: invoice_id || null,
         amount,
-        gateway: result.gateway,
-        gateway_ref: result.order_id,
-        status: "pending",
+        gateway: gw,
+        gateway_ref: `${externalRef}|${initResult.gatewayTxId}`,
+        status: 'pending',
       },
     });
 
-    return NextResponse.json({ payment_url: result.payment_url, order_id: result.order_id, gateway: result.gateway });
+    return NextResponse.json({
+      payment_url: initResult.redirectUrl,
+      order_id: initResult.gatewayTxId,
+      gateway: gw,
+    });
   } catch (err: any) {
     console.error("[subscriber payment/init] Error:", err);
     return NextResponse.json({ error: err.message || "خطأ" }, { status: 500 });

@@ -194,12 +194,6 @@ export default function PaymentGatewaysPage() {
               <p className="text-xs text-amber-600 mt-2 inline-flex items-center gap-1">
                 <Lock className="w-3 h-3" /> البيانات السرّية مشفّرة في القاعدة (AES-256-GCM)
               </p>
-              <p className="text-xs text-gray-500 mt-2">
-                للبوابات القديمة (FuratPay / APS):{' '}
-                <Link href="/staff/settings" className="text-blue-600 underline">
-                  إعدادات &gt; بوابات قديمة
-                </Link>
-              </p>
             </div>
           </div>
         </div>

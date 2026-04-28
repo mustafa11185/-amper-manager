@@ -96,12 +96,6 @@ model Tenant {
   trial_plan            String?               // e.g., "business" while on "pro"
   trial_plan_until      DateTime?
   has_used_trial        Boolean               @default(false)
-  // APS Fawateer-E (CBI) integration
-  aps_enabled           Boolean               @default(false)
-  aps_biller_code       String?               // Assigned by CBI
-  aps_service_type      String?               // CBI service code (e.g. "30010201")
-  aps_billing_prefix    String?               // Prefix for biller_account_no generation (e.g. "01")
-  aps_settlement_iban   String?               // Bank account for settlements
   created_at            DateTime              @default(now())
   updated_at            DateTime              @updatedAt
   modules               TenantModule[]
@@ -287,18 +281,6 @@ model Branch {
   whatsapp_number String?
   gps_lat      Decimal?  @db.Decimal(10,8)
   gps_lng      Decimal?  @db.Decimal(11,8)
-  furatpay_merchant_id      String?
-  furatpay_api_key          String?
-  furatpay_secret_key       String?
-  furatpay_is_sandbox       Boolean  @default(true)
-  aps_merchant_id           String?
-  aps_access_code           String?
-  aps_sha_request_phrase    String?
-  aps_sha_response_phrase   String?
-  aps_is_sandbox            Boolean  @default(true)
-  aps_enabled               Boolean  @default(false)
-  active_gateway            String   @default("none")
-  zaincash_phone            String?
   is_online_payment_enabled Boolean  @default(false)
   is_active    Boolean  @default(true)
   created_at   DateTime @default(now())
@@ -513,8 +495,6 @@ model Invoice {
   payment_method   String?
   online_payment_id String?
   // APS Fawateer-E linkage (one of these set when paid via APS channel)
-  aps_bank_trx_id  String?  @unique
-  aps_joebpps_trx  String?
   collector_id     String?
   received_by_owner Boolean @default(false)
   device_id        String?
@@ -831,60 +811,6 @@ model OverloadEvent {
 }
 
 // ─── APS FAWATEER-E (CBI) ────────────────────────────────────
-
-// Raw log of every payment notification received from APS.
-// Used for audit, idempotency, and reconciliation against APS settlement reports.
-model ApsTransaction {
-  id              String    @id @default(uuid())
-  tenant_id       String
-  // From the notification
-  joebpps_trx     String    @unique  // APS unique trx id
-  bank_trx_id     String                // Issuing bank's trx id
-  bank_code       String                // Acquiring bank
-  billing_no      String                // Maps to subscriber.biller_account_no
-  bill_no         String
-  service_type    String
-  paid_amount     Decimal   @db.Decimal(14,3)
-  due_amount      Decimal   @db.Decimal(14,3)
-  fees_amount     Decimal   @default(0) @db.Decimal(14,3)
-  fees_on_biller  Boolean   @default(false)
-  process_date    DateTime
-  stmt_date       DateTime  @db.Date
-  access_channel  String                // ATM, POS, MOB, WEB, etc.
-  payment_method  String                // ACTDEB, CCDEB, etc.
-  payment_type    String?               // POSTPAID | PREPAID
-  // Linkage to our internal records
-  subscriber_id   String?
-  invoice_id      String?
-  status          String    @default("received")  // received | applied | failed | reversed
-  error_message   String?
-  raw_payload     Json?     // Full incoming XML/JSON for audit
-  received_at     DateTime  @default(now())
-  applied_at      DateTime?
-  @@index([tenant_id, received_at])
-  @@index([billing_no])
-  @@index([bank_trx_id])
-  @@index([status])
-  @@map("aps_transactions")
-}
-
-// Periodic settlements (when APS transfers collected funds to the tenant's bank account)
-model ApsSettlement {
-  id              String    @id @default(uuid())
-  tenant_id       String
-  period_month    Int
-  period_year     Int
-  total_collected Decimal   @db.Decimal(14,2)
-  fees_amount     Decimal   @db.Decimal(14,2)
-  net_amount      Decimal   @db.Decimal(14,2)
-  trx_count       Int       @default(0)
-  is_settled      Boolean   @default(false)
-  settled_at      DateTime?
-  notes           String?
-  created_at      DateTime  @default(now())
-  @@unique([tenant_id, period_year, period_month])
-  @@map("aps_settlements")
-}
 
 model FuelEvent {
   id            String    @id @default(uuid())
@@ -1435,7 +1361,6 @@ model SubscriberAppSettings {
   welcome_message String?
   primary_color   String   @default("#1B4FD8")
   logo_url        String?
-  furatpay_enabled  Boolean @default(false)
   collector_call_enabled Boolean @default(true)
   marketing_message    String?
   report_target_phone String?

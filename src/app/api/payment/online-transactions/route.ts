@@ -81,9 +81,6 @@ export async function GET(req: NextRequest) {
         total,
         count: successPayments.length,
         by_gateway: byGateway,
-        // Legacy keys kept for old consumers; new code should use by_gateway.
-        furatpay_count: byGateway.furatpay?.count ?? 0,
-        aps_count: byGateway.aps?.count ?? 0,
       },
     })
   } catch (err: any) {

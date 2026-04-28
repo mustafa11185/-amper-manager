@@ -49,8 +49,6 @@ const GATEWAY_LABELS: Record<string, string> = {
   zaincash: 'ZainCash',
   qi: 'Qi',
   asiapay: 'AsiaPay',
-  furatpay: 'FuratPay',
-  aps: 'APS',
 }
 
 const fmt = (n: number) => Number(n).toLocaleString('en')

@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
           branch_id: { in: branchIds },
           billing_month: currentMonth,
           billing_year: currentYear,
-          payment_method: { notIn: ['furatpay'] },
+          payment_method: { notIn: ['furatpay', 'aps', 'zaincash', 'qi', 'asiapay'] },
         },
       }),
       prisma.onlinePayment.aggregate({
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
           branch_id: { in: branchIds },
           billing_month: prevCycle.month,
           billing_year: prevCycle.year,
-          payment_method: { notIn: ['furatpay'] },
+          payment_method: { notIn: ['furatpay', 'aps', 'zaincash', 'qi', 'asiapay'] },
         },
       }),
       prisma.onlinePayment.aggregate({

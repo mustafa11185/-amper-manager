@@ -17,7 +17,6 @@ export async function GET() {
   return NextResponse.json({
     welcome_message: s?.welcome_message ?? '',
     primary_color: s?.primary_color ?? '#1B4FD8',
-    furatpay_enabled: s?.furatpay_enabled ?? false,
     collector_call_enabled: s?.collector_call_enabled ?? true,
     show_debt: s?.show_debt ?? true,
     show_generator: s?.show_generator ?? true,

@@ -75,11 +75,10 @@ export async function GET() {
     total_collected: totalCollected,
     invoices_count: invoices.length,
     online_count: online.length,
-    // Legacy keys for older my-report builds. Sum every card-like method
-    // into total_card so tenants on Qi/AsiaPay don't see 0.
+    // Backward-compat keys for older my-report builds — the dynamic
+    // by_method map above is the source of truth.
     total_cash: byMethod.cash ?? 0,
     total_zaincash: byMethod.zaincash ?? 0,
-    total_card: (byMethod.card ?? 0) + (byMethod.qi ?? 0) + (byMethod.asiapay ?? 0)
-              + (byMethod.furatpay ?? 0) + (byMethod.aps ?? 0),
+    total_card: (byMethod.card ?? 0) + (byMethod.qi ?? 0) + (byMethod.asiapay ?? 0),
   })
 }

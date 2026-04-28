@@ -16,9 +16,17 @@ export async function POST(req: NextRequest) {
 
     const branch = subscriber.branch;
 
-    // Only allow simulation when no real gateway is configured
-    if (branch.is_online_payment_enabled && branch.active_gateway && branch.active_gateway !== "none") {
-      return NextResponse.json({ error: "الدفع الإلكتروني مفعّل — استخدم الدفع الحقيقي" }, { status: 400 });
+    // Only allow simulation when no real gateway is configured. We block
+    // simulate if the tenant has ANY enabled PaymentGatewayCredentials row
+    // — there's a real gateway, run real flow.
+    if (branch.is_online_payment_enabled) {
+      const realGateway = await prisma.paymentGatewayCredentials.findFirst({
+        where: { tenant_id: subscriber.tenant_id, is_enabled: true },
+        select: { gateway: true },
+      });
+      if (realGateway) {
+        return NextResponse.json({ error: "الدفع الإلكتروني مفعّل — استخدم الدفع الحقيقي" }, { status: 400 });
+      }
     }
 
     // Find current unpaid invoice

@@ -791,8 +791,6 @@ const GATEWAY_LABEL_MAP: Record<string, string> = {
   zaincash: 'ZainCash',
   qi: 'Qi',
   asiapay: 'AsiaPay',
-  furatpay: 'FuratPay',
-  aps: 'APS',
   cash: 'نقداً',
   card: 'بطاقة',
 }

@@ -54,8 +54,6 @@ const METHOD_LABEL: Record<string, string> = {
   zaincash: 'زين كاش',
   qi: 'Qi',
   asiapay: 'AsiaPay',
-  furatpay: 'FuratPay',
-  aps: 'APS',
   card: 'بطاقة',
 }
 

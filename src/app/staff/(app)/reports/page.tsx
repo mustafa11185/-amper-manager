@@ -46,8 +46,6 @@ const GATEWAY_LABEL: Record<string, string> = {
   zaincash: 'ZainCash',
   qi: 'Qi',
   asiapay: 'AsiaPay',
-  furatpay: 'FuratPay',
-  aps: 'APS',
 }
 
 type Section = 'financial' | 'subscribers' | 'collectors' | 'expenses' | 'attendance' | 'online'
