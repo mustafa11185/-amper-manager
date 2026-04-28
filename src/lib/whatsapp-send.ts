@@ -114,3 +114,32 @@ export async function sendTenantAlert(tenantId: string, message: string): Promis
     apiKey: tenant.alert_api_key,
   })
 }
+
+// Send WhatsApp to an arbitrary recipient (e.g., a subscriber's phone) using
+// the tenant's saved provider+key. Different from sendTenantAlert because the
+// destination is the customer, not the merchant. Returns false silently if
+// the tenant has no provider configured — payment success path keeps working.
+export async function sendSubscriberWhatsApp(
+  tenantId: string,
+  phone: string,
+  message: string,
+): Promise<boolean> {
+  if (!phone) return false
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      alerts_enabled: true,
+      alert_provider: true,
+      alert_api_key: true,
+    },
+  })
+  if (!tenant?.alerts_enabled || !tenant.alert_provider || !tenant.alert_api_key) {
+    return false
+  }
+  return sendWhatsAppAlert({
+    phone,
+    message,
+    provider: tenant.alert_provider as Provider,
+    apiKey: tenant.alert_api_key,
+  })
+}
