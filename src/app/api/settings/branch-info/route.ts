@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
       is_active: true,
       ...(qBranch ? { id: qBranch } : {}),
     },
-    select: { id: true, name: true, whatsapp_number: true, gps_lat: true, gps_lng: true, address: true },
+    select: {
+      id: true, name: true, whatsapp_number: true, gps_lat: true, gps_lng: true, address: true,
+      is_online_payment_enabled: true,
+    },
   })
 
   if (!branch) return NextResponse.json({ error: 'لا يوجد فرع' }, { status: 404 })
@@ -31,6 +34,7 @@ export async function GET(req: NextRequest) {
     gps_lat: branch.gps_lat ? Number(branch.gps_lat) : null,
     gps_lng: branch.gps_lng ? Number(branch.gps_lng) : null,
     address: branch.address,
+    is_online_payment_enabled: branch.is_online_payment_enabled,
   })
 }
 
@@ -44,7 +48,7 @@ export async function PUT(req: NextRequest) {
   const tenantId = user.tenantId as string
 
   try {
-    const { whatsapp_number, gps_lat, gps_lng, address, branch_id } = await req.json()
+    const { whatsapp_number, gps_lat, gps_lng, address, branch_id, is_online_payment_enabled } = await req.json()
 
     const branch = await prisma.branch.findFirst({
       where: {
@@ -62,6 +66,11 @@ export async function PUT(req: NextRequest) {
         gps_lat: gps_lat != null ? gps_lat : null,
         gps_lng: gps_lng != null ? gps_lng : null,
         address: address || null,
+        // Only update the toggle when the client explicitly sends it. Older
+        // clients that omit the field don't accidentally flip it off.
+        ...(typeof is_online_payment_enabled === 'boolean'
+          ? { is_online_payment_enabled }
+          : {}),
       },
     })
 

@@ -7,7 +7,7 @@ import {
   Building2, DollarSign, Wallet, MessageSquare, Users, GitBranch,
   QrCode, Smartphone, Monitor, MapPin, Tag, Palette, CreditCard,
   ChevronLeft, LogOut, Shield, LayoutList, Pencil, Trash2, Plus,
-  Bell,
+  Bell, ShieldCheck,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -101,7 +101,8 @@ export default function SettingsPage() {
             <MenuItem icon={DollarSign} label="التسعير الشهري" onClick={() => setSection('pricing')} />
             <MenuItem icon={Wallet} label="محافظ الجباة" onClick={() => setSection('wallets')} />
             <MenuItem icon={MapPin} label="معلومات المشروع" onClick={() => setSection('branch-info')} />
-            <MenuItem icon={CreditCard} label="الدفع الإلكتروني" onClick={() => setSection('payment')} />
+            <MenuItem icon={ShieldCheck} label="بوابات الدفع الإلكتروني" onClick={() => { window.location.href = '/staff/settings/payment-gateways' }} />
+            <MenuItem icon={CreditCard} label="بوابات قديمة (FuratPay / APS)" onClick={() => setSection('payment')} />
             <MenuItem icon={MessageSquare} label="واتساب" onClick={() => setSection('whatsapp')} badge={!isGold ? 'Gold' : undefined} />
             <MenuItem icon={Users} label="إدارة الموظفين" onClick={() => setSection('staff')} />
             <MenuItem icon={GitBranch} label="الفروع" onClick={() => setSection('branches')} badge={!isFleet ? 'Fleet' : undefined} />
@@ -129,7 +130,7 @@ export default function SettingsPage() {
 
       {/* Sign out */}
       <button
-        onClick={() => signOut({ callbackUrl: '/login' })}
+        onClick={() => signOut({ callbackUrl: '/staff/login' })}
         className="w-full bg-bg-surface rounded-2xl p-4 flex items-center gap-3 text-danger"
         style={{ boxShadow: 'var(--shadow-sm)' }}
       >
@@ -791,7 +792,13 @@ function WalletsSection() {
 // SECTION D0: Branch Info (معلومات المشروع)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function BranchInfoSection() {
-  const [info, setInfo] = useState({ whatsapp_number: '', gps_lat: null as number | null, gps_lng: null as number | null, address: '' })
+  const [info, setInfo] = useState({
+    whatsapp_number: '',
+    gps_lat: null as number | null,
+    gps_lng: null as number | null,
+    address: '',
+    is_online_payment_enabled: false,
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [gettingGps, setGettingGps] = useState(false)
@@ -805,6 +812,7 @@ function BranchInfoSection() {
           gps_lat: d.gps_lat ?? null,
           gps_lng: d.gps_lng ?? null,
           address: d.address || '',
+          is_online_payment_enabled: !!d.is_online_payment_enabled,
         })
         setLoading(false)
       })
@@ -905,6 +913,33 @@ function BranchInfoSection() {
         />
       </div>
 
+      {/* Online payment master toggle (per-branch kill switch). When off,
+          subscriber portal hides all gateway buttons regardless of which
+          gateways the tenant has configured. */}
+      <button
+        type="button"
+        onClick={() => setInfo(prev => ({ ...prev, is_online_payment_enabled: !prev.is_online_payment_enabled }))}
+        className="bg-bg-surface rounded-2xl p-4 w-full flex items-center justify-between text-right"
+        style={{ boxShadow: 'var(--shadow-md)' }}
+      >
+        <div className="flex-1 pr-3">
+          <p className="text-sm font-bold text-text-primary mb-0.5">الدفع الإلكتروني عبر تطبيق المشترك</p>
+          <p className="text-[11px] text-text-muted leading-relaxed">
+            عند تفعيله، يرى المشترك أزرار الدفع (Qi / AsiaPay / ZainCash) إذا كانت بياناتك مسجَّلة في
+            <span className="text-blue-primary font-medium">{' '}بوابات الدفع</span>.
+          </p>
+        </div>
+        <div
+          className="w-12 h-7 rounded-full relative transition-colors flex-shrink-0"
+          style={{ background: info.is_online_payment_enabled ? '#1B4FD8' : '#CBD5E1' }}
+        >
+          <div
+            className="absolute top-0.5 w-6 h-6 bg-white rounded-full transition-all shadow"
+            style={{ [info.is_online_payment_enabled ? 'right' : 'left']: '2px' }}
+          />
+        </div>
+      </button>
+
       {/* Save */}
       <button
         onClick={save}
@@ -1001,7 +1036,13 @@ function PaymentSettingsSection() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-base font-bold">إعدادات الدفع الإلكتروني</h2>
+      <h2 className="text-base font-bold">بوابات قديمة (FuratPay / APS)</h2>
+
+      <div className="rounded-xl p-3 text-[11px]" style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D' }}>
+        ⚠️ هذي البوابات تُحفظ مباشرة على الفرع (غير مشفّرة).
+        للبوابات الجديدة (Qi / ZainCash / AsiaPay) المُشفّرة قم بزيارة:
+        <a href="/staff/settings/payment-gateways" className="underline font-bold mr-1">بوابات الدفع الإلكتروني</a>.
+      </div>
 
       <div className="rounded-xl p-2.5 text-[10px] text-center font-medium" style={{ background: 'var(--blue-soft)', color: 'var(--blue-primary)' }}>
         يمكن تفعيل بوابة واحدة فقط في نفس الوقت
@@ -2124,7 +2165,7 @@ function StaffTrackingSection() {
       )}
 
       {tab === 'map' && (
-        <Link href="/staff-tracking"
+        <Link href="/staff/staff-tracking"
           className="bg-bg-surface rounded-2xl p-6 text-center block" style={{ boxShadow: 'var(--shadow-md)' }}>
           <MapPin size={32} className="text-blue-primary mx-auto mb-2" />
           <p className="text-sm font-bold text-text-primary mb-1">خريطة تتبع الجباة</p>
