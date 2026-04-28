@@ -337,6 +337,15 @@ export async function GET(req: NextRequest) {
         list: onlineList,
         total_success: successPayments.reduce((s, p) => s + Number(p.amount), 0),
         success_rate: onlinePayments.length > 0 ? Math.round((successPayments.length / onlinePayments.length) * 100) : 0,
+        // Per-gateway breakdown so the reports UI can show which gateway
+        // drove how much. Empty when nothing succeeded.
+        by_gateway: successPayments.reduce<Record<string, { count: number; total: number }>>((acc, p) => {
+          const g = p.gateway || 'unknown'
+          if (!acc[g]) acc[g] = { count: 0, total: 0 }
+          acc[g].count += 1
+          acc[g].total += Number(p.amount)
+          return acc
+        }, {}),
       },
     })
   } catch (err: any) {

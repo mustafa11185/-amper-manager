@@ -235,7 +235,7 @@ export default function SubscriberDetailPage() {
       <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
         <div className="flex gap-2">
           <button
-            onClick={() => router.push(`/pos?subscriber=${sub.id}`)}
+            onClick={() => router.push(`/staff/pos?subscriber=${sub.id}`)}
             className="flex-1 h-10 rounded-xl bg-blue-primary text-white text-xs font-bold flex items-center justify-center gap-1.5"
             style={{ boxShadow: '0 4px 20px rgba(27,79,216,0.25)' }}
           >
@@ -244,7 +244,7 @@ export default function SubscriberDetailPage() {
           </button>
           {Number(sub.total_debt) > 0 && (
             <button
-              onClick={() => router.push(`/pos?subscriber=${sub.id}&type=debt`)}
+              onClick={() => router.push(`/staff/pos?subscriber=${sub.id}&type=debt`)}
               className="flex-1 h-10 rounded-xl bg-danger/10 text-danger text-xs font-bold flex items-center justify-center gap-1.5"
             >
               <CreditCard size={14} />
@@ -300,6 +300,9 @@ export default function SubscriberDetailPage() {
 
       {/* Invoices */}
       <InvoicesSection invoices={sub.invoices} isOwner={isOwner} subscriberId={id} onRefresh={loadSub} />
+
+      {/* Payment history (cash + online) */}
+      <PaymentHistorySection subscriberId={id} />
 
       {/* Discounts */}
       {sub.discounts.length > 0 && (
@@ -726,7 +729,7 @@ function DeleteSubscriberSection({ subscriberId, subscriberName }: { subscriberI
       const res = await fetch(`/api/subscribers/${subscriberId}`, { method: 'DELETE' })
       if (res.ok) {
         toast.success('تم حذف المشترك')
-        router.push('/subscribers')
+        router.push('/staff/subscribers')
       } else {
         const data = await res.json()
         toast.error(data.error || 'فشل الحذف')
@@ -779,5 +782,113 @@ function DeleteSubscriberSection({ subscriberId, subscriberName }: { subscriberI
         </div>
       )}
     </>
+  )
+}
+
+// Subscriber payment history — joins cash invoice payments with online
+// gateway transactions in a single chronological feed.
+const GATEWAY_LABEL_MAP: Record<string, string> = {
+  zaincash: 'ZainCash',
+  qi: 'Qi',
+  asiapay: 'AsiaPay',
+  furatpay: 'FuratPay',
+  aps: 'APS',
+  cash: 'نقداً',
+  card: 'بطاقة',
+}
+
+function PaymentHistorySection({ subscriberId }: { subscriberId: string }) {
+  const [paidInvoices, setPaidInvoices] = useState<any[]>([])
+  const [onlinePayments, setOnlinePayments] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch(`/api/subscriber/payment-history?subscriber_id=${subscriberId}`)
+      .then(r => r.ok ? r.json() : { payments: [], online_payments: [] })
+      .then(d => {
+        setPaidInvoices(d.payments ?? [])
+        setOnlinePayments(d.online_payments ?? [])
+      })
+      .catch(() => { setPaidInvoices([]); setOnlinePayments([]) })
+      .finally(() => setLoading(false))
+  }, [subscriberId])
+
+  // Merge into one timeline. Tag each row with `kind` so the UI can render
+  // the right icon/colour without re-deriving from method strings.
+  const items = [
+    ...onlinePayments.map(op => ({
+      kind: 'online' as const,
+      id: op.id,
+      date: op.created_at,
+      amount: Number(op.amount),
+      method: op.gateway,
+      ref: op.gateway_ref,
+    })),
+    ...paidInvoices.map(inv => ({
+      kind: 'cash' as const,
+      id: inv.id,
+      date: inv.updated_at,
+      amount: Number(inv.amount_paid),
+      method: inv.payment_method,
+      ref: `${inv.billing_month}/${inv.billing_year}`,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 20)
+
+  if (loading) {
+    return (
+      <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
+        <h3 className="text-sm font-bold mb-3">تاريخ الدفعات</h3>
+        <div className="skeleton h-16 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
+        <h3 className="text-sm font-bold mb-2">تاريخ الدفعات</h3>
+        <p className="text-xs text-text-muted text-center py-4">لا توجد دفعات سابقة</p>
+      </div>
+    )
+  }
+
+  const totalOnline = onlinePayments.reduce((s, op) => s + Number(op.amount), 0)
+  const totalCash = paidInvoices.reduce((s, inv) => s + Number(inv.amount_paid), 0)
+
+  return (
+    <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold">تاريخ الدفعات</h3>
+        <p className="text-[10px] text-text-muted">
+          إلكتروني <span className="font-num font-bold text-violet">{totalOnline.toLocaleString('en')}</span>
+          {' · '}
+          نقدي <span className="font-num font-bold text-success">{totalCash.toLocaleString('en')}</span>
+          {' د.ع'}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        {items.map(it => (
+          <div key={`${it.kind}-${it.id}`} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+            <div className="flex items-center gap-2">
+              <span
+                className="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+                style={
+                  it.kind === 'online'
+                    ? { background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }
+                    : { background: 'rgba(5,150,105,0.10)', color: '#059669' }
+                }
+              >
+                {it.kind === 'online' ? 'إلكتروني' : 'نقدي'}
+              </span>
+              <div>
+                <p className="text-xs font-bold">{GATEWAY_LABEL_MAP[it.method] ?? it.method}</p>
+                <p className="text-[10px] text-text-muted font-num">{new Date(it.date).toLocaleDateString('ar-IQ')}</p>
+              </div>
+            </div>
+            <p className="font-num text-xs font-bold">{it.amount.toLocaleString('en')} <span className="text-[9px] text-text-muted">د.ع</span></p>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

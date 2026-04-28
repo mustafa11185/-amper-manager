@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   BarChart3, Users, Wallet, Receipt, Clock, CreditCard,
   Download, Printer, ChevronDown, ChevronUp, RefreshCw,
@@ -37,7 +38,16 @@ type ReportData = {
   online_payments: {
     list: { id: string; date: string; subscriber_name: string; amount: number; status: string; tran_ref: string }[]
     total_success: number; success_rate: number
+    by_gateway?: Record<string, { count: number; total: number }>
   }
+}
+
+const GATEWAY_LABEL: Record<string, string> = {
+  zaincash: 'ZainCash',
+  qi: 'Qi',
+  asiapay: 'AsiaPay',
+  furatpay: 'FuratPay',
+  aps: 'APS',
 }
 
 type Section = 'financial' | 'subscribers' | 'collectors' | 'expenses' | 'attendance' | 'online'
@@ -303,7 +313,7 @@ export default function ReportsPage() {
       {openSections.has('online') && (
         <div className="space-y-3">
           <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
-            <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="grid grid-cols-2 gap-3 text-center mb-3">
               <div>
                 <p className="font-num text-lg font-bold" style={{ color: '#7C3AED' }}>{fmt(data.online_payments.total_success)}</p>
                 <p className="text-[10px] text-text-muted">إجمالي الناجح (د.ع)</p>
@@ -313,6 +323,22 @@ export default function ReportsPage() {
                 <p className="text-[10px] text-text-muted">نسبة النجاح</p>
               </div>
             </div>
+            {data.online_payments.by_gateway && Object.keys(data.online_payments.by_gateway).length > 0 && (
+              <div className="border-t border-border pt-2.5">
+                <p className="text-[10px] text-text-muted mb-1.5">حسب البوابة</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(data.online_payments.by_gateway)
+                    .sort((a, b) => b[1].total - a[1].total)
+                    .map(([gw, agg]) => (
+                      <div key={gw} className="rounded-lg px-2 py-1 bg-bg-muted border border-border text-[10px]">
+                        <span className="font-medium">{GATEWAY_LABEL[gw] ?? gw}</span>
+                        <span className="text-text-muted mx-1">·</span>
+                        <span className="font-num text-violet font-bold">{fmt(agg.total)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
           {data.online_payments.list.length === 0 ? (
             <p className="text-xs text-text-muted text-center py-4">لا توجد عمليات دفع إلكتروني</p>
@@ -338,6 +364,12 @@ export default function ReportsPage() {
               ))}
             </div>
           )}
+          <Link
+            href="/staff/online-transactions"
+            className="block text-center text-xs font-bold text-blue-primary py-3 mt-2 rounded-xl bg-blue-soft hover:bg-blue-soft/80 transition"
+          >
+            عرض كل المعاملات + فلاتر متقدّمة ←
+          </Link>
         </div>
       )}
     </div>

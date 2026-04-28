@@ -61,19 +61,29 @@ export async function GET(req: NextRequest) {
       created_at: p.created_at.toISOString(),
     }))
 
-    // Summary
+    // Summary (gateway-agnostic — works for any value of OnlinePayment.gateway)
     const successPayments = payments.filter(p => p.status === 'success')
     const total = successPayments.reduce((s, p) => s + Number(p.amount), 0)
-    const furatpayCount = successPayments.filter(p => p.gateway === 'furatpay').length
-    const apsCount = successPayments.filter(p => p.gateway === 'aps').length
+
+    // by_gateway: { [gateway]: { count, total } } — used by the UI to render
+    // a per-gateway chip row without hardcoding a list of names.
+    const byGateway: Record<string, { count: number; total: number }> = {}
+    for (const p of successPayments) {
+      const g = p.gateway || 'unknown'
+      if (!byGateway[g]) byGateway[g] = { count: 0, total: 0 }
+      byGateway[g].count += 1
+      byGateway[g].total += Number(p.amount)
+    }
 
     return NextResponse.json({
       transactions,
       summary: {
         total,
         count: successPayments.length,
-        furatpay_count: furatpayCount,
-        aps_count: apsCount,
+        by_gateway: byGateway,
+        // Legacy keys kept for old consumers; new code should use by_gateway.
+        furatpay_count: byGateway.furatpay?.count ?? 0,
+        aps_count: byGateway.aps?.count ?? 0,
       },
     })
   } catch (err: any) {

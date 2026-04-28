@@ -46,6 +46,17 @@ type ReportSummary = {
   total_collected: number
   invoices_count: number
   visited: number
+  by_method?: Record<string, number>
+}
+
+const METHOD_LABEL: Record<string, string> = {
+  cash: 'نقداً',
+  zaincash: 'زين كاش',
+  qi: 'Qi',
+  asiapay: 'AsiaPay',
+  furatpay: 'FuratPay',
+  aps: 'APS',
+  card: 'بطاقة',
 }
 
 export default function MyReportPage() {
@@ -172,9 +183,37 @@ export default function MyReportPage() {
         </div>
 
         <div className="space-y-2.5">
-          <ReportRow icon={Banknote} label="نقداً" amount={reportData.total_cash} color="text-success" />
-          <ReportRow icon={Smartphone} label="زين كاش" amount={reportData.total_zaincash} color="text-blue-primary" />
-          <ReportRow icon={CreditCard} label="بطاقة" amount={reportData.total_card} color="text-violet" />
+          {/* Render per-method rows. New API returns by_method covering every
+              gateway today; if the response is older and lacks it, we fall
+              back to the legacy 3-row layout. */}
+          {reportData.by_method && Object.keys(reportData.by_method).length > 0 ? (
+            Object.entries(reportData.by_method)
+              .filter(([, amt]) => amt > 0)
+              .sort((a, b) => b[1] - a[1])
+              .map(([method, amount]) => {
+                const Icon = method === 'cash' ? Banknote
+                  : method === 'zaincash' ? Smartphone
+                  : CreditCard
+                const color = method === 'cash' ? 'text-success'
+                  : method === 'zaincash' ? 'text-blue-primary'
+                  : 'text-violet'
+                return (
+                  <ReportRow
+                    key={method}
+                    icon={Icon}
+                    label={METHOD_LABEL[method] ?? method}
+                    amount={amount}
+                    color={color}
+                  />
+                )
+              })
+          ) : (
+            <>
+              <ReportRow icon={Banknote} label="نقداً" amount={reportData.total_cash} color="text-success" />
+              <ReportRow icon={Smartphone} label="زين كاش" amount={reportData.total_zaincash} color="text-blue-primary" />
+              <ReportRow icon={CreditCard} label="بطاقة" amount={reportData.total_card} color="text-violet" />
+            </>
+          )}
 
           <div className="border-t border-border pt-2.5">
             <div className="flex items-center justify-between">
