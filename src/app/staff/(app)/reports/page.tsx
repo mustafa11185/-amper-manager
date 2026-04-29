@@ -39,6 +39,8 @@ type ReportData = {
     list: { id: string; date: string; subscriber_name: string; amount: number; status: string; tran_ref: string }[]
     total_success: number; success_rate: number
     by_gateway?: Record<string, { count: number; total: number }>
+    commissions_by_gateway?: Record<string, { count: number; volume: number; commission: number; gateway_fee: number; net: number }>
+    top_payers?: { subscriber_id: string; name: string; total: number; count: number }[]
   }
 }
 
@@ -338,6 +340,62 @@ export default function ReportsPage() {
               </div>
             )}
           </div>
+
+          {/* Monthly commission summary per gateway */}
+          {data.online_payments.commissions_by_gateway && Object.keys(data.online_payments.commissions_by_gateway).length > 0 && (
+            <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
+              <p className="text-xs font-bold mb-2">عمولات الشهر — حسب البوابة</p>
+              <div className="overflow-x-auto -mx-2 px-2">
+                <table className="w-full text-[10px]">
+                  <thead>
+                    <tr className="text-text-muted">
+                      <th className="text-right font-medium pb-1.5">البوابة</th>
+                      <th className="text-left font-medium pb-1.5">العمليات</th>
+                      <th className="text-left font-medium pb-1.5">الحجم</th>
+                      <th className="text-left font-medium pb-1.5">عمولة</th>
+                      <th className="text-left font-medium pb-1.5">رسوم</th>
+                      <th className="text-left font-medium pb-1.5">الصافي</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(data.online_payments.commissions_by_gateway)
+                      .sort((a, b) => b[1].volume - a[1].volume)
+                      .map(([gw, agg]) => (
+                        <tr key={gw} className="border-t border-border">
+                          <td className="py-1.5 font-medium">{GATEWAY_LABEL[gw] ?? gw}</td>
+                          <td className="text-left font-num">{fmt(agg.count)}</td>
+                          <td className="text-left font-num">{fmt(Math.round(agg.volume))}</td>
+                          <td className="text-left font-num text-rose-700">{fmt(Math.round(agg.commission))}</td>
+                          <td className="text-left font-num text-rose-700">{fmt(Math.round(agg.gateway_fee))}</td>
+                          <td className="text-left font-num font-bold text-emerald-700">{fmt(Math.round(agg.net))}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Top-10 online payers */}
+          {data.online_payments.top_payers && data.online_payments.top_payers.length > 0 && (
+            <div className="bg-bg-surface rounded-2xl p-4" style={{ boxShadow: 'var(--shadow-md)' }}>
+              <p className="text-xs font-bold mb-2">أعلى 10 مشتركين دفعاً إلكترونياً</p>
+              <div className="space-y-1.5">
+                {data.online_payments.top_payers.map((p, i) => (
+                  <div key={p.subscriber_id} className="flex items-center justify-between text-[11px] py-1.5" style={{ borderBottom: i < (data.online_payments.top_payers?.length ?? 0) - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: i < 3 ? '#FEF3C7' : '#F1F5F9', color: i < 3 ? '#A16207' : '#475569' }}>{i + 1}</span>
+                      <span className="font-medium">{p.name || '—'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-text-muted text-[10px]">{p.count} عملية</span>
+                      <span className="font-num font-bold">{fmt(Math.round(p.total))} <span className="text-[9px] font-normal">د.ع</span></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {data.online_payments.list.length === 0 ? (
             <p className="text-xs text-text-muted text-center py-4">لا توجد عمليات دفع إلكتروني</p>
           ) : (

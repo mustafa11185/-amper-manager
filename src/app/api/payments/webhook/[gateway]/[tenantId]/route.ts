@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getGateway, type GatewayName, type VerifiedCallback } from '@/lib/payments'
 import { sendSubscriberWhatsApp } from '@/lib/whatsapp-send'
+import { recordPaymentResult } from '@/lib/payments/failure-alert'
 
 function paymentConfirmationMessage(opts: {
   subscriberName?: string
@@ -100,7 +101,7 @@ export async function POST(
       if (op.invoice_id) {
         const invoice = await tx.invoice.findUnique({
           where: { id: op.invoice_id },
-          include: { subscriber: { select: { name: true, phone: true } } },
+          include: { subscriber: { select: { name: true, phone: true, total_debt: true } } },
         })
         if (invoice && !invoice.is_fully_paid) {
           await tx.invoice.update({
@@ -112,6 +113,16 @@ export async function POST(
             },
           })
           const paidAmount = Number(op.amount)
+          // Overflow above invoiceUnpaid → decrement total_debt (mirror logic in
+          // /api/payment/callback/[gateway]/route.ts; see comment there).
+          const invoiceUnpaid = Math.max(0, Number(invoice.total_amount_due) - Number(invoice.amount_paid))
+          const overflow = Math.max(0, paidAmount - invoiceUnpaid)
+          if (overflow > 0 && invoice.subscriber) {
+            await tx.subscriber.update({
+              where: { id: invoice.subscriber_id },
+              data: { total_debt: Math.max(0, Number(invoice.subscriber.total_debt) - overflow) },
+            })
+          }
           await tx.notification.create({
             data: {
               branch_id: invoice.branch_id, tenant_id: invoice.tenant_id,
@@ -150,6 +161,8 @@ export async function POST(
         paymentConfirmationMessage({ subscriberName: name, amount, gateway, reference: verified.gatewayTxId }),
       ).catch(e => console.warn(`[webhook/${gateway}] whatsapp failed:`, e?.message))
     }
+    recordPaymentResult({ tenantId, gateway, status: 'success' })
+      .catch(e => console.warn(`[webhook/${gateway}] failure-alert reset failed:`, e?.message))
     return ok({ processed: 'success' })
   }
 
@@ -159,6 +172,8 @@ export async function POST(
       where: { id: op.id },
       data: { status: verified.status === 'expired' ? 'expired' : 'failed' },
     })
+    recordPaymentResult({ tenantId, gateway, status: verified.status })
+      .catch(e => console.warn(`[webhook/${gateway}] failure-alert failed:`, e?.message))
     return ok({ processed: verified.status })
   }
 

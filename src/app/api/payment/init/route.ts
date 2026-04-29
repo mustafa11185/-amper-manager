@@ -104,6 +104,16 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    // The callback handlers credit the full invoice (amount_paid := total_amount_due,
+    // is_fully_paid := true) regardless of op.amount, so accepting amount < invoiceUnpaid
+    // would silently short the merchant. Require the full invoice when invoice_id is set;
+    // partial settlement must go through the cash/POS path.
+    if (invoice && amount < invoiceUnpaid - 1) {
+      return NextResponse.json(
+        { error: `يجب دفع الفاتورة بالكامل (${invoiceUnpaid.toLocaleString('en')} د.ع)` },
+        { status: 400 }
+      );
+    }
     // ---------------------------------------------------------------------
 
     const gw = payment_method as GatewayName;

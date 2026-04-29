@@ -90,6 +90,11 @@ model Tenant {
   alert_provider        String?               // "callmebot" | "wasender" | "twilio"
   alert_api_key         String?
   alerts_enabled        Boolean               @default(false)
+  // SMS fallback (used when WhatsApp send fails — see sendSubscriberMessage)
+  sms_provider          String?               // currently "cellsoft" only; expand as needed
+  sms_api_key           String?               // provider auth (e.g., "username:password" for cellsoft)
+  sms_sender            String?               // approved sender ID
+  sms_endpoint          String?               // override base URL when the provider exposes a tenant-specific shard
   // À-la-carte feature overrides — features force-enabled regardless of plan
   feature_overrides     String[]              @default([])
   // Free trial of higher plan

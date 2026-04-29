@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getGateway, type GatewayName, type VerifiedCallback } from '@/lib/payments'
 import { sendSubscriberWhatsApp } from '@/lib/whatsapp-send'
+import { recordPaymentResult } from '@/lib/payments/failure-alert'
 
 // Build the receipt body the subscriber sees on WhatsApp after a successful
 // online payment. Mirrors the in-app `payment_confirmed` notification text
@@ -102,7 +103,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ gateway: st
       if (op.invoice_id) {
         const invoice = await tx.invoice.findUnique({
           where: { id: op.invoice_id },
-          include: { subscriber: { select: { name: true, phone: true } } },
+          include: { subscriber: { select: { name: true, phone: true, total_debt: true } } },
         })
         if (invoice && !invoice.is_fully_paid) {
           await tx.invoice.update({
@@ -114,6 +115,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ gateway: st
             },
           })
           const paidAmount = Number(op.amount)
+          // Overflow above the invoice unpaid portion goes against pre-existing
+          // total_debt (the portal sends `invoiceUnpaid + total_debt` as one sum;
+          // without this, the merchant gets the cash but the debt counter never
+          // moves). init/route.ts already caps amount at `invoiceUnpaid + debt`.
+          const invoiceUnpaid = Math.max(0, Number(invoice.total_amount_due) - Number(invoice.amount_paid))
+          const overflow = Math.max(0, paidAmount - invoiceUnpaid)
+          if (overflow > 0 && invoice.subscriber) {
+            await tx.subscriber.update({
+              where: { id: invoice.subscriber_id },
+              data: { total_debt: Math.max(0, Number(invoice.subscriber.total_debt) - overflow) },
+            })
+          }
           await tx.notification.create({
             data: {
               branch_id: invoice.branch_id, tenant_id: invoice.tenant_id,
@@ -166,6 +179,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ gateway: st
         paymentConfirmationMessage({ subscriberName: name, amount, gateway, reference: verified.gatewayTxId }),
       ).catch(e => console.warn(`[payment/callback/${gateway}] whatsapp failed:`, e?.message))
     }
+    recordPaymentResult({ tenantId, gateway, status: 'success' })
+      .catch(e => console.warn(`[payment/callback/${gateway}] failure-alert reset failed:`, e?.message))
     return userFacingRedirect(req, 'success', verified.gatewayTxId)
   }
 
@@ -174,6 +189,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ gateway: st
       where: { id: op.id },
       data: { status: verified.status === 'expired' ? 'expired' : 'failed' },
     })
+    recordPaymentResult({ tenantId, gateway, status: verified.status })
+      .catch(e => console.warn(`[payment/callback/${gateway}] failure-alert failed:`, e?.message))
     return userFacingRedirect(req, 'failure', verified.gatewayTxId)
   }
 

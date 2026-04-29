@@ -31,6 +31,10 @@ type Summary = {
   by_gateway: Record<string, { count: number; total: number }>
 }
 
+type DayPoint = { day: string; success: number; failed: number; pending: number; expired: number; refunded: number }
+type SeriesEntry = { gateway: string; points: DayPoint[]; success_rate: number | null; total_attempts: number }
+type RateData = { days: string[]; series: SeriesEntry[] }
+
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'today', label: 'اليوم' },
   { key: 'month', label: 'هذا الشهر' },
@@ -60,6 +64,8 @@ export default function OnlineTransactionsPage() {
   const [transactions, setTransactions] = useState<Tx[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [chartDays, setChartDays] = useState<7 | 14 | 30>(14)
+  const [rate, setRate] = useState<RateData | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -73,6 +79,13 @@ export default function OnlineTransactionsPage() {
       .catch(() => { setTransactions([]); setSummary(null) })
       .finally(() => setLoading(false))
   }, [period, gateway, status])
+
+  useEffect(() => {
+    fetch(`/api/payment/success-rate?days=${chartDays}`)
+      .then(r => r.json())
+      .then((d: RateData) => setRate(d))
+      .catch(() => setRate(null))
+  }, [chartDays])
 
   // Distinct gateway names that appeared in the current dataset — drives
   // both the filter dropdown and the per-gateway chip row.
@@ -209,6 +222,32 @@ export default function OnlineTransactionsPage() {
           </div>
         )}
 
+        {/* Success-rate chart per gateway */}
+        {rate && rate.series.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900">معدّل النجاح حسب البوابة</h2>
+                <p className="text-[10px] text-gray-500 mt-0.5">آخر {chartDays} يوم — مكدّس: ناجحة (أخضر) فوق فاشلة (أحمر)</p>
+              </div>
+              <div className="flex gap-1">
+                {[7, 14, 30].map(d => (
+                  <button
+                    key={d}
+                    onClick={() => setChartDays(d as 7 | 14 | 30)}
+                    className={`h-7 px-2 rounded text-[10px] font-medium ${chartDays === d ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >{d}ي</button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-4">
+              {rate.series.map(s => (
+                <SuccessRateRow key={s.gateway} entry={s} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Transaction list */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loading ? (
@@ -248,6 +287,39 @@ export default function OnlineTransactionsPage() {
         {transactions.length === 200 && (
           <p className="text-center text-[10px] text-gray-400 mt-3">يُعرض أحدث 200 معاملة فقط — استخدم الفلاتر لتقليل الفترة</p>
         )}
+      </div>
+    </div>
+  )
+}
+
+function SuccessRateRow({ entry }: { entry: SeriesEntry }) {
+  const max = Math.max(1, ...entry.points.map(p => p.success + p.failed + p.expired))
+  const ratePct = entry.success_rate == null ? null : Math.round(entry.success_rate * 100)
+  const rateColor = ratePct == null ? '#94A3B8' : ratePct >= 90 ? '#15803D' : ratePct >= 70 ? '#A16207' : '#B91C1C'
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-xs font-bold text-gray-800">{GATEWAY_LABELS[entry.gateway] ?? entry.gateway}</p>
+        <div className="flex items-center gap-2 text-[10px]">
+          <span className="text-gray-500">{entry.total_attempts} محاولة</span>
+          <span className="font-bold" style={{ color: rateColor }}>
+            {ratePct == null ? '—' : `${ratePct}%`}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-end gap-[2px] h-12">
+        {entry.points.map(p => {
+          const total = p.success + p.failed + p.expired
+          const totalH = (total / max) * 100
+          const successPart = total === 0 ? 0 : (p.success / total) * 100
+          return (
+            <div key={p.day} className="flex-1 flex flex-col-reverse" title={`${p.day} · نجاح ${p.success} / فشل ${p.failed + p.expired}`} style={{ height: '100%' }}>
+              <div style={{ height: `${totalH}%`, background: '#FEE2E2', borderRadius: '2px 2px 0 0' }}>
+                <div style={{ height: `${successPart}%`, background: '#86EFAC', borderRadius: '2px 2px 0 0' }} />
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

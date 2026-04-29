@@ -64,6 +64,9 @@ function SubscriberHomeInner() {
   // so the UI never has to re-derive that logic.
   const [paymentOptions, setPaymentOptions] = useState<PaymentOption[]>([])
   const [payLoading, setPayLoading] = useState<string | null>(null)
+  const [pendingGateway, setPendingGateway] = useState<PaymentOption | null>(null)
+  const [redirectingGateway, setRedirectingGateway] = useState<PaymentOption | null>(null)
+  const [showTimeoutHelp, setShowTimeoutHelp] = useState(false)
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -106,6 +109,15 @@ function SubscriberHomeInner() {
     }
   }, [router])
 
+  // After 30s on the redirect-waiting overlay, surface a help button. Most
+  // browsers redirect within ~2s; if the user is still here after 30s the
+  // gateway init likely failed silently or the popup was blocked.
+  useEffect(() => {
+    if (!redirectingGateway) return
+    const t = setTimeout(() => setShowTimeoutHelp(true), 30_000)
+    return () => clearTimeout(t)
+  }, [redirectingGateway])
+
   const onTabClick = (key: Tab) => {
     setTab(key)
     if (key === 'alerts' && unreadCount > 0) {
@@ -136,11 +148,25 @@ function SubscriberHomeInner() {
   const invMonthName = inv ? formatBillingMonth(inv.billing_month, inv.billing_year) : ''
   const totalDue = invoiceDue + (data?.total_debt ?? 0)
 
-  // Single payment entry point — every option button calls this with its
-  // gateway key. Server handles routing (new adapter vs legacy createPayment).
-  async function handlePayment(gateway: string) {
+  // Two-step pay flow:
+  //   1. requestPayment(opt) → opens the confirmation modal (no network).
+  //   2. confirmPayment()    → calls /api/payment/init and redirects.
+  // The modal lets the user verify amount + gateway before being shipped off
+  // to a 3rd-party site, which materially reduces "I clicked the wrong thing"
+  // support tickets and gives the page a chance to set the redirect-waiting
+  // state (with the 30s timeout-help button).
+  function requestPayment(opt: PaymentOption) {
     if (totalDue <= 0) { toast.error('لا يوجد مبلغ مستحق'); return }
-    setPayLoading(gateway)
+    setPendingGateway(opt)
+  }
+
+  async function confirmPayment() {
+    const opt = pendingGateway
+    if (!opt) return
+    setPendingGateway(null)
+    setRedirectingGateway(opt)
+    setShowTimeoutHelp(false)
+    setPayLoading(opt.gateway)
     try {
       const res = await fetch('/api/payment/init', {
         method: 'POST',
@@ -148,7 +174,7 @@ function SubscriberHomeInner() {
         body: JSON.stringify({
           invoice_id: data?.current_invoice?.id ?? null,
           amount: totalDue,
-          payment_method: gateway,
+          payment_method: opt.gateway,
         }),
       })
       const result = await res.json()
@@ -161,6 +187,7 @@ function SubscriberHomeInner() {
       toast.error('خطأ في الاتصال')
     }
     setPayLoading(null)
+    setRedirectingGateway(null)
   }
 
   async function logout() {
@@ -391,7 +418,7 @@ function SubscriberHomeInner() {
                     return (
                       <button
                         key={opt.gateway}
-                        onClick={() => handlePayment(opt.gateway)}
+                        onClick={() => requestPayment(opt)}
                         disabled={disabled || isLoading}
                         className="w-full rounded-xl p-3 flex items-center justify-between disabled:opacity-50"
                         style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.08)' }}
@@ -521,6 +548,59 @@ function SubscriberHomeInner() {
         {/* PWA install banner */}
         <InstallBanner />
       </div>
+
+      {/* Pre-redirect confirmation modal */}
+      {pendingGateway && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)' }} onClick={() => setPendingGateway(null)}>
+          <div className="w-full max-w-sm rounded-2xl p-5 space-y-4" style={{ background: '#FFFFFF' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold" style={{ color: '#0F172A' }}>تأكيد الدفع</h3>
+              <PaymentBadge kind={pendingGateway.badge} />
+            </div>
+            <div className="rounded-xl p-3 space-y-2" style={{ background: '#F1F5F9' }}>
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: '#475569' }}>البوابة</span>
+                <span className="font-bold" style={{ color: '#0F172A' }}>{pendingGateway.label}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: '#475569' }}>المبلغ</span>
+                <span className="font-num font-bold text-lg" style={{ color: '#0F172A' }}>{fmt(totalDue)} د.ع</span>
+              </div>
+            </div>
+            <p className="text-[12px] leading-6 text-right" style={{ color: '#475569' }}>
+              ستحوّل إلى موقع {pendingGateway.label} لإتمام الدفع. لا تُغلق المتصفح حتى عودتك.
+            </p>
+            <div className="rounded-lg px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: '#ECFDF5', color: '#065F46' }}>
+              <span>🔒</span>
+              <span>دفع آمن مشفّر · أمبير لا يخزّن بياناتك المصرفية</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button onClick={() => setPendingGateway(null)} className="rounded-xl py-3 text-sm font-bold" style={{ background: '#F1F5F9', color: '#475569' }}>إلغاء</button>
+              <button onClick={confirmPayment} className="rounded-xl py-3 text-sm font-bold" style={{ background: brandColor, color: '#FFFFFF' }}>متابعة الدفع</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Redirect-in-flight overlay (visible until window.location.href takes effect, or on stuck network) */}
+      {redirectingGateway && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: 'rgba(15,23,42,0.85)' }}>
+          <div className="text-center space-y-4 max-w-sm">
+            <Loader2 className="w-10 h-10 animate-spin mx-auto" style={{ color: '#FFFFFF' }} />
+            <p className="text-base font-bold text-white">جارٍ نقلك إلى {redirectingGateway.label}…</p>
+            <p className="text-xs text-white/80">لا تُغلق هذه الصفحة</p>
+            {showTimeoutHelp && (
+              <div className="space-y-2 pt-2">
+                <p className="text-xs text-white/70">يبدو أن العملية تأخذ أطول من المعتاد.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => { setRedirectingGateway(null); setPayLoading(null); setShowTimeoutHelp(false) }} className="rounded-xl py-2 text-xs font-bold" style={{ background: 'rgba(255,255,255,0.15)', color: '#FFFFFF' }}>إلغاء والعودة</button>
+                  <a href="/portal/about-payments" className="rounded-xl py-2 text-xs font-bold text-center" style={{ background: '#FFFFFF', color: '#0F172A' }}>هل تواجه مشكلة؟</a>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   )
 }

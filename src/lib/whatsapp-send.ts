@@ -117,8 +117,12 @@ export async function sendTenantAlert(tenantId: string, message: string): Promis
 
 // Send WhatsApp to an arbitrary recipient (e.g., a subscriber's phone) using
 // the tenant's saved provider+key. Different from sendTenantAlert because the
-// destination is the customer, not the merchant. Returns false silently if
-// the tenant has no provider configured — payment success path keeps working.
+// destination is the customer, not the merchant.
+//
+// Falls back to SMS (Cellsoft, when configured on the tenant) if the WhatsApp
+// send fails or the tenant has no WA provider — Iraqi customers don't all
+// have WhatsApp, and outages on the WA side shouldn't kill the receipt.
+// Returns true if EITHER channel succeeded.
 export async function sendSubscriberWhatsApp(
   tenantId: string,
   phone: string,
@@ -133,13 +137,22 @@ export async function sendSubscriberWhatsApp(
       alert_api_key: true,
     },
   })
-  if (!tenant?.alerts_enabled || !tenant.alert_provider || !tenant.alert_api_key) {
+  let waSent = false
+  if (tenant?.alerts_enabled && tenant.alert_provider && tenant.alert_api_key) {
+    waSent = await sendWhatsAppAlert({
+      phone,
+      message,
+      provider: tenant.alert_provider as Provider,
+      apiKey: tenant.alert_api_key,
+    })
+  }
+  if (waSent) return true
+  // SMS fallback: imported lazily to avoid a circular ref at module init.
+  try {
+    const { sendTenantSms } = await import('./sms-send')
+    return await sendTenantSms(tenantId, phone, message)
+  } catch (err: any) {
+    console.warn('[whatsapp-send] sms fallback failed:', err?.message ?? err)
     return false
   }
-  return sendWhatsAppAlert({
-    phone,
-    message,
-    provider: tenant.alert_provider as Provider,
-    apiKey: tenant.alert_api_key,
-  })
 }

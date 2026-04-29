@@ -346,6 +346,34 @@ export async function GET(req: NextRequest) {
           acc[g].total += Number(p.amount)
           return acc
         }, {}),
+        // Per-gateway commission/fee summary for this month — owner reconciles
+        // payouts against gateway statements.
+        commissions_by_gateway: successPayments.reduce<Record<string, { count: number; volume: number; commission: number; gateway_fee: number; net: number }>>((acc, p) => {
+          const g = p.gateway || 'unknown'
+          const volume = Number(p.amount)
+          const commission = Number(p.commission_amount ?? 0)
+          const gatewayFee = Number(p.gateway_fee ?? 0)
+          if (!acc[g]) acc[g] = { count: 0, volume: 0, commission: 0, gateway_fee: 0, net: 0 }
+          acc[g].count += 1
+          acc[g].volume += volume
+          acc[g].commission += commission
+          acc[g].gateway_fee += gatewayFee
+          acc[g].net += volume - commission - gatewayFee
+          return acc
+        }, {}),
+        // Top-10 subscribers by online-paid volume this month. Subscribers
+        // without a name (legacy/imported) appear as "—" so the row still
+        // counts toward volume but stays anonymous in the UI.
+        top_payers: Object.values(
+          successPayments.reduce<Record<string, { subscriber_id: string; name: string; total: number; count: number }>>((acc, p) => {
+            if (!p.subscriber_id) return acc
+            const id = p.subscriber_id
+            if (!acc[id]) acc[id] = { subscriber_id: id, name: subNameMap.get(id) ?? '—', total: 0, count: 0 }
+            acc[id].total += Number(p.amount)
+            acc[id].count += 1
+            return acc
+          }, {})
+        ).sort((a, b) => b.total - a.total).slice(0, 10),
       },
     })
   } catch (err: any) {

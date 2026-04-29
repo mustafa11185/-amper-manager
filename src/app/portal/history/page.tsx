@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, CheckCircle2, Clock, Loader2, CreditCard, Banknote } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, CheckCircle2, Clock, Loader2, CreditCard, Banknote, FileDown } from 'lucide-react'
 import { formatBillingMonth } from '@/lib/billing-months'
 
 const fmt = (n: number) => Number(n).toLocaleString('en')
@@ -43,7 +44,18 @@ function methodLabel(method: string): string {
 
 function methodIcon(method: string) {
   if (method === 'cash') return <Banknote className="w-4 h-4" style={{ color: '#2E7D32' }} />
-  return <CreditCard className="w-4 h-4" style={{ color: '#0F172A' }} />
+  return <CreditCard className="w-4 h-4" style={{ color: '#1B4FD8' }} />
+}
+
+const ONLINE_METHODS = new Set(['zaincash', 'qi', 'qi_card', 'asiapay', 'visa', 'mastercard', 'online'])
+
+// Per-channel palette: cash → green, online → blue. Drives a subtle background
+// tint + left-edge accent so the user can scan the list and tell at a glance
+// "هذي الدفعة كانت أون لاين، وهذي للجابي".
+function channelTheme(method: string) {
+  if (method === 'cash') return { bg: 'rgba(46,125,50,0.06)', edge: '#2E7D32', label: 'نقدي' }
+  if (ONLINE_METHODS.has(method)) return { bg: 'rgba(27,79,216,0.06)', edge: '#1B4FD8', label: 'إلكتروني' }
+  return { bg: 'rgba(15,23,42,0.04)', edge: '#94A3B8', label: methodLabel(method) }
 }
 
 function formatDate(dateStr: string): string {
@@ -113,16 +125,18 @@ export default function PaymentHistoryPage() {
           </div>
         )}
 
-        {payments.map((p, i) => (
+        {payments.map((p) => {
+          const theme = channelTheme(p.payment_method)
+          return (
           <div
             key={p.id}
-            className="py-3 animate-fade-in"
-            style={{ borderBottom: i < payments.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none' }}
+            className="rounded-xl p-3 mb-2 animate-fade-in"
+            style={{ background: theme.bg, borderRight: `3px solid ${theme.edge}` }}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {methodIcon(p.payment_method)}
-                <span className="text-[11px] font-medium" style={{ color: p.payment_method === 'cash' ? '#2E7D32' : '#0F172A' }}>
+                <span className="text-[11px] font-bold" style={{ color: theme.edge }}>
                   {methodLabel(p.payment_method)}
                 </span>
                 {p.is_fully_paid ? (
@@ -152,7 +166,8 @@ export default function PaymentHistoryPage() {
               </p>
             </div>
           </div>
-        ))}
+          )
+        })}
 
         {/* Online payments section */}
         {onlinePayments.length > 0 && (
@@ -162,17 +177,17 @@ export default function PaymentHistoryPage() {
                 الدفعات الإلكترونية
               </p>
             </div>
-            {onlinePayments.map((op, i) => (
+            {onlinePayments.map((op) => (
               <div
                 key={op.id}
-                className="py-3 animate-fade-in"
-                style={{ borderBottom: i < onlinePayments.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none' }}
+                className="rounded-xl p-3 mb-2 animate-fade-in"
+                style={{ background: 'rgba(27,79,216,0.06)', borderRight: '3px solid #1B4FD8' }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CreditCard className="w-4 h-4" style={{ color: '#0F172A' }} />
-                    <span className="text-[11px] font-medium" style={{ color: '#0F172A' }}>
-                      {op.gateway}
+                    <CreditCard className="w-4 h-4" style={{ color: '#1B4FD8' }} />
+                    <span className="text-[11px] font-bold" style={{ color: '#1B4FD8' }}>
+                      إلكتروني · {op.gateway}
                     </span>
                     <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#16A34A' }} />
                   </div>
@@ -185,7 +200,10 @@ export default function PaymentHistoryPage() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center justify-end mt-1">
+                <div className="flex items-center justify-between mt-1">
+                  <Link href={`/portal/receipt/${op.id}`} className="rounded-lg px-2.5 py-1 text-[10px] font-bold inline-flex items-center gap-1" style={{ background: '#FFFFFF', border: '1px solid #1B4FD8', color: '#1B4FD8' }}>
+                    <FileDown className="w-3 h-3" /> الإيصال
+                  </Link>
                   <p className="font-num text-xl font-black" style={{ color: '#0F172A' }}>
                     {fmt(op.amount)} <span className="text-[10px] font-normal" style={{ color: '#94A3B8' }}>د.ع</span>
                   </p>
