@@ -1,12 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 // Days-before-expiry at which to notify the owner (one notification per day).
 const EXPIRY_WARNING_DAYS = [7, 3, 1]
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const authErr = verifyCronAuth(req);
+  if (authErr) return authErr;
   try {
     const now = new Date()
     const tenants = await prisma.tenant.findMany({

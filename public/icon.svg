@@ -1,19 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  AMPER · Voltage Hex Mark · Blue · v2
-  1024×1024 · dark bg · iOS/Android app icon source
-  Inner viewBox crops to hex bounds; outer padding ~8% each side
-  so Android adaptive masking + iOS corner radius still show full mark.
+  AMPER · App Icon · Blue
+  1024x1024 master for iOS / Android / favicon generation
+  Includes background — this is the source for ALL app icons
 -->
-<svg xmlns="http://www.w3.org/2000/svg"
-     viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect width="1024" height="1024" fill="#060D1A"/>
-  <svg x="82" y="62" width="860" height="900" viewBox="20 14 80 92"
-       preserveAspectRatio="xMidYMid meet">
-    <polygon points="60,14 100,37 100,83 60,106 20,83 20,37"
-             fill="none" stroke="#1B4FD8" stroke-width="5"
-             stroke-linejoin="miter"/>
-    <path d="M66,24 L50,60 L62,60 L46,96 L76,56 L62,56 Z"
-          fill="#2D8CFF"/>
-  </svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg-blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0D1B2A"/>
+      <stop offset="100%" stop-color="#060D1A"/>
+    </linearGradient>
+    <linearGradient id="wave-b" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1B4FD8" stop-opacity="0.5"/>
+      <stop offset="55%" stop-color="#2D8CFF"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <radialGradient id="glow-b" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#7C3AED" stop-opacity="0.6"/>
+      <stop offset="70%" stop-color="#7C3AED" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background (full bleed — iOS adds rounded corners automatically) -->
+  <rect width="1024" height="1024" fill="url(#bg-blue)"/>
+
+  <!-- Subtle grid for tech feel (very faint) -->
+  <g opacity="0.06" stroke="#2D8CFF" stroke-width="1">
+    <line x1="0" y1="256" x2="1024" y2="256"/>
+    <line x1="0" y1="512" x2="1024" y2="512"/>
+    <line x1="0" y1="768" x2="1024" y2="768"/>
+    <line x1="256" y1="0" x2="256" y2="1024"/>
+    <line x1="512" y1="0" x2="512" y2="1024"/>
+    <line x1="768" y1="0" x2="768" y2="1024"/>
+  </g>
+
+  <!-- Main mark (scaled from 240→1024, factor ~4.27) -->
+  <g transform="translate(0,0) scale(4.267)">
+    <circle cx="200" cy="120" r="42" fill="url(#glow-b)"/>
+    <path d="M 30 120
+             C 60 120, 60 60, 90 60
+             C 120 60, 120 180, 150 180
+             C 180 180, 180 120, 200 120"
+          stroke="url(#wave-b)" stroke-width="14"
+          stroke-linecap="round" fill="none"/>
+    <circle cx="200" cy="120" r="13" fill="#7C3AED"/>
+    <circle cx="200" cy="120" r="5" fill="#FFFFFF"/>
+  </g>
 </svg>

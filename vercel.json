@@ -4,6 +4,16 @@
     {
       "path": "/api/cron/check-iot-alerts",
       "schedule": "0 * * * *"
+    },
+    {
+      "comment": "SaaS billing: trial reminders + renewal reminders + auto-renew attempts. Runs daily at 06:00 UTC = 09:00 Iraq.",
+      "path": "/api/cron/billing-auto-renew",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "comment": "Subscription state check: grace period transitions + suspension. Runs hourly.",
+      "path": "/api/cron/check-subscriptions",
+      "schedule": "30 * * * *"
     }
   ]
 }
