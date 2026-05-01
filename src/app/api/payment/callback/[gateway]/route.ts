@@ -39,9 +39,11 @@ function paymentConfirmationMessage(opts: {
 const SUPPORTED: GatewayName[] = ['zaincash', 'qi', 'asiapay']
 
 function userFacingRedirect(req: NextRequest, path: 'success' | 'failure', ref?: string) {
-  const url = new URL(req.url)
-  url.pathname = `/payment/${path}`
-  url.search = ref ? `?ref=${encodeURIComponent(ref)}` : ''
+  // Behind Render's proxy `req.url` resolves to localhost:10000, which would
+  // bounce the customer back to a dead URL. Prefer the configured public URL.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
+  const url = new URL(`/payment/${path}`, baseUrl)
+  if (ref) url.searchParams.set('ref', ref)
   return NextResponse.redirect(url, 302)
 }
 
