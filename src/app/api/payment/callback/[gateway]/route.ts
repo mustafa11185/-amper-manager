@@ -39,9 +39,14 @@ function paymentConfirmationMessage(opts: {
 const SUPPORTED: GatewayName[] = ['zaincash', 'qi', 'asiapay']
 
 function userFacingRedirect(req: NextRequest, path: 'success' | 'failure', ref?: string) {
-  // Behind Render's proxy `req.url` resolves to localhost:10000, which would
-  // bounce the customer back to a dead URL. Prefer the configured public URL.
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
+  // Behind Render's proxy `req.url` resolves to localhost:10000. Prefer the
+  // forwarded host header (set by every Render/Cloudflare hop), then the
+  // configured public URL, then req.url (local dev only).
+  const forwardedHost = req.headers.get('x-forwarded-host')
+  const forwardedProto = req.headers.get('x-forwarded-proto') || 'https'
+  const baseUrl = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
   const url = new URL(`/payment/${path}`, baseUrl)
   if (ref) url.searchParams.set('ref', ref)
   return NextResponse.redirect(url, 302)
