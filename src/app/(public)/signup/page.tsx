@@ -83,7 +83,11 @@ function SignupForm() {
         const errMap: Record<string, string> = {
           INVALID_BUSINESS_NAME: 'اسم النشاط مطلوب',
           INVALID_OWNER_NAME: 'اسم المالك مطلوب',
-          INVALID_PHONE: 'رقم الهاتف غير صحيح — لازم يبدأ بـ 07',
+          INVALID_PHONE: 'رقم الهاتف غير صحيح',
+          INVALID_PHONE_DIGITS: 'رقم الهاتف يجب أن يحتوي على أرقام فقط',
+          INVALID_PHONE_PREFIX: 'رقم الهاتف لازم يبدأ بـ 07',
+          INVALID_PHONE_LENGTH: 'رقم الهاتف يجب أن يكون 11 رقم بالضبط (07 + 9 أرقام)',
+          INVALID_PHONE_OPERATOR: 'بداية الرقم غير صحيحة — استخدم 073 أو 077 أو 078 أو 079',
           PASSWORD_TOO_SHORT: 'كلمة المرور أقل من 6 أحرف',
           PHONE_ALREADY_REGISTERED: 'رقم الهاتف مسجّل سابقاً — تقدر تسجل دخول',
           PLAN_NOT_FOUND: 'الباقة المختارة غير موجودة',
@@ -99,8 +103,10 @@ function SignupForm() {
         toast.success('جاري تحويلك لإكمال الدفع...');
         setTimeout(() => { window.location.href = data.redirectUrl; }, 800);
       } else if (data.loginRedirect) {
-        toast.success('تم إنشاء حسابك — سجّل دخول لإكمال الدفع');
-        setTimeout(() => router.push(data.loginRedirect), 1200);
+        // No gateway available right now — tenant created in 7-day trial.
+        // Sales team contacts the customer to arrange manual payment.
+        toast.success('✅ تم إنشاء حسابك بـ 7 أيام تجربة مجانية. سيتواصل معك فريق أمبير قريباً لإكمال الاشتراك.', { duration: 7000 });
+        setTimeout(() => router.push(data.loginRedirect), 2500);
       }
     } catch (err) {
       toast.error('فشل الاتصال — حاول مرة ثانية');
@@ -174,11 +180,12 @@ function SignupForm() {
             <Input
               label="رقم الهاتف (يُستخدم لتسجيل الدخول)"
               value={phone}
-              onChange={setPhone}
+              onChange={(v) => setPhone(v.replace(/\D/g, '').slice(0, 11))}
               placeholder="07701234567"
               required
               inputMode="tel"
               dir="ltr"
+              maxLength={11}
             />
 
             <Input
@@ -270,7 +277,7 @@ export default function SignupPage() {
 }
 
 function Input({
-  label, value, onChange, placeholder, required, type = 'text', inputMode, dir,
+  label, value, onChange, placeholder, required, type = 'text', inputMode, dir, maxLength,
 }: {
   label: string;
   value: string;
@@ -280,6 +287,7 @@ function Input({
   type?: string;
   inputMode?: 'tel' | 'text' | 'email';
   dir?: 'ltr' | 'rtl';
+  maxLength?: number;
 }) {
   return (
     <div>
@@ -294,6 +302,7 @@ function Input({
         required={required}
         inputMode={inputMode}
         dir={dir}
+        maxLength={maxLength}
         className="w-full px-3 py-2.5 rounded-lg text-sm"
         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text)' }}
       />

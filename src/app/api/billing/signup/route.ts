@@ -65,11 +65,23 @@ export async function POST(req: NextRequest) {
   if (!ownerName || ownerName.length < 2) {
     return NextResponse.json({ error: 'INVALID_OWNER_NAME' }, { status: 400 });
   }
-  if (!IRAQI_PHONE.test(phoneRaw)) {
-    return NextResponse.json({ error: 'INVALID_PHONE' }, { status: 400 });
+  // Normalize first so length/format errors are checked against the canonical
+  // 07XXXXXXXXX form regardless of whether the user typed a +964 prefix.
+  const phoneNormalized = phoneRaw.startsWith('964') ? '0' + phoneRaw.slice(3) : phoneRaw;
+  if (!/^\d+$/.test(phoneNormalized)) {
+    return NextResponse.json({ error: 'INVALID_PHONE_DIGITS' }, { status: 400 });
   }
-  // Normalize: 07XXXXXXXXX
-  const phone = phoneRaw.startsWith('964') ? '0' + phoneRaw.slice(3) : phoneRaw;
+  if (!phoneNormalized.startsWith('07')) {
+    return NextResponse.json({ error: 'INVALID_PHONE_PREFIX' }, { status: 400 });
+  }
+  if (phoneNormalized.length !== 11) {
+    return NextResponse.json({ error: 'INVALID_PHONE_LENGTH' }, { status: 400 });
+  }
+  if (!IRAQI_PHONE.test(phoneNormalized)) {
+    // Length + prefix passed, so the third digit is wrong (must be 3-9).
+    return NextResponse.json({ error: 'INVALID_PHONE_OPERATOR' }, { status: 400 });
+  }
+  const phone = phoneNormalized;
   if (password.length < 6) {
     return NextResponse.json({ error: 'PASSWORD_TOO_SHORT' }, { status: 400 });
   }
