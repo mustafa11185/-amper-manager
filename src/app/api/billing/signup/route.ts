@@ -36,6 +36,9 @@ interface SignupBody {
   phone: string;
   password: string;
   governorate?: string;
+  district?: string;
+  neighborhood?: string;
+  landmark?: string;
   plan_id: string;
   period_months: number;
   gateway: string;
@@ -55,6 +58,17 @@ export async function POST(req: NextRequest) {
   const phoneRaw = (body.phone || '').replace(/[\s\-()]/g, '');
   const password = body.password || '';
   const governorate = (body.governorate || '').trim() || null;
+  const district = (body.district || '').trim() || null;
+  const neighborhood = (body.neighborhood || '').trim() || null;
+  const landmark = (body.landmark || '').trim() || null;
+  // Combine neighborhood + landmark into the Branch.address freeform field.
+  // Branch has district_key + address; we don't have a dedicated landmark
+  // column, so we encode it as "<neighborhood> — قرب: <landmark>" so the
+  // sales team sees both pieces in the admin client-detail view.
+  const branchAddress = [
+    neighborhood,
+    landmark ? `قرب: ${landmark}` : null,
+  ].filter(Boolean).join(' — ') || null;
   const planId = body.plan_id;
   const periodMonths = body.period_months;
   const gateway = body.gateway;
@@ -136,6 +150,8 @@ export async function POST(req: NextRequest) {
         tenant_id: tenant.id,
         name: 'الفرع الرئيسي',
         governorate: governorate ?? undefined,
+        district_key: district ?? undefined,
+        address: branchAddress ?? undefined,
         is_active: true,
       },
     });

@@ -49,6 +49,9 @@ function SignupForm() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [governorate, setGovernorate] = useState('');
+  const [district, setDistrict] = useState('');
+  const [neighborhood, setNeighborhood] = useState('');
+  const [landmark, setLandmark] = useState('');
   const [gateway, setGateway] = useState('zaincash');
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,6 +75,9 @@ function SignupForm() {
           phone,
           password,
           governorate: governorate || undefined,
+          district: district || undefined,
+          neighborhood: neighborhood || undefined,
+          landmark: landmark || undefined,
           plan_id: planId,
           period_months: periodMonths,
           gateway,
@@ -199,7 +205,7 @@ function SignupForm() {
 
             <div>
               <label className="block text-sm mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                المحافظة (اختياري)
+                المحافظة
               </label>
               <select
                 value={governorate}
@@ -211,6 +217,27 @@ function SignupForm() {
                 {GOVS.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
+
+            <Input
+              label="القضاء (اختياري)"
+              value={district}
+              onChange={setDistrict}
+              placeholder="مثال: الكرخ"
+            />
+
+            <Input
+              label="الحي / المنطقة (اختياري)"
+              value={neighborhood}
+              onChange={setNeighborhood}
+              placeholder="مثال: المنصور"
+            />
+
+            <Input
+              label="أقرب نقطة دالة (اختياري)"
+              value={landmark}
+              onChange={setLandmark}
+              placeholder="مثال: مقابل مسجد الرحمة"
+            />
 
             <div>
               <label className="block text-sm mb-2" style={{ color: 'var(--text-muted)' }}>
